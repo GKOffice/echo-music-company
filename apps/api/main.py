@@ -1,0 +1,76 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+import os
+import redis.asyncio as aioredis
+from dotenv import load_dotenv
+
+from database import engine
+from routers import auth, artists, releases, points, agents, hub
+
+load_dotenv()
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.redis = await aioredis.from_url(
+        REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True,
+    )
+    yield
+    await app.state.redis.aclose()
+    await engine.dispose()
+
+
+app = FastAPI(
+    title="ECHO API",
+    description="ECHO — Autonomous AI Music Company API",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
+    redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        os.getenv("WEB_URL", "http://localhost:3000"),
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(artists.router, prefix="/api/v1/artists", tags=["artists"])
+app.include_router(releases.router, prefix="/api/v1/releases", tags=["releases"])
+app.include_router(points.router, prefix="/api/v1/points", tags=["points"])
+app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
+app.include_router(hub.router, prefix="/api/v1/hub", tags=["hub"])
+
+
+@app.get("/health", tags=["system"])
+async def health_check():
+    try:
+        redis_ok = await app.state.redis.ping()
+    except Exception:
+        redis_ok = False
+
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "service": "echo-api",
+            "version": "0.1.0",
+            "redis": "ok" if redis_ok else "error",
+        }
+    )
+
+
+@app.get("/", tags=["system"])
+async def root():
+    return {"message": "ECHO API", "docs": "/docs"}
