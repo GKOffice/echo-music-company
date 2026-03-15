@@ -375,6 +375,62 @@ CREATE INDEX idx_contracts_artist ON contracts(artist_id);
 CREATE INDEX idx_echo_points_status ON echo_points(status, buyer_user_id);
 
 -- ============================================================
+-- Expenses
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  artist_id UUID REFERENCES artists(id),
+  release_id UUID REFERENCES releases(id),
+  category VARCHAR(50) CHECK (category IN ('recording','marketing','distribution','legal','creative','advance','other')),
+  amount DECIMAL(12,2) NOT NULL,
+  recoupable BOOLEAN DEFAULT FALSE,
+  description TEXT,
+  vendor VARCHAR(255),
+  paid_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- Copyright Registrations
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS copyright_registrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  track_id UUID REFERENCES tracks(id),
+  release_id UUID REFERENCES releases(id),
+  society VARCHAR(50) CHECK (society IN ('ascap','bmi','sesac','mlc','soundexchange','songtrust','copyright_office','content_id')),
+  status VARCHAR(20) DEFAULT 'pending',
+  registration_number VARCHAR(255),
+  submitted_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- DMCA Requests
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS dmca_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  track_id UUID REFERENCES tracks(id),
+  claimant VARCHAR(255),
+  platform VARCHAR(100),
+  claim_type VARCHAR(50),
+  status VARCHAR(20) DEFAULT 'received',
+  received_at TIMESTAMPTZ DEFAULT NOW(),
+  responded_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ,
+  notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_artist ON expenses(artist_id);
+CREATE INDEX IF NOT EXISTS idx_copyright_track ON copyright_registrations(track_id);
+CREATE INDEX IF NOT EXISTS idx_dmca_track ON dmca_requests(track_id);
+
+-- ============================================================
 -- Updated_at trigger function
 -- ============================================================
 

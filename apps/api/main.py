@@ -7,7 +7,7 @@ import redis.asyncio as aioredis
 from dotenv import load_dotenv
 
 from database import engine
-from routers import auth, artists, releases, points, agents, hub
+from routers import auth, artists, releases, points, agents, hub, finance, legal
 
 load_dotenv()
 
@@ -52,6 +52,8 @@ app.include_router(releases.router, prefix="/api/v1/releases", tags=["releases"]
 app.include_router(points.router, prefix="/api/v1/points", tags=["points"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
 app.include_router(hub.router, prefix="/api/v1/hub", tags=["hub"])
+app.include_router(finance.router, prefix="/api/v1/finance", tags=["finance"])
+app.include_router(legal.router, prefix="/api/v1/legal", tags=["legal"])
 
 
 @app.get("/health", tags=["system"])
