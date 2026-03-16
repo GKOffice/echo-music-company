@@ -1,23 +1,25 @@
 """
-ECHO Agent Orchestration Entry Point
-Starts all 21 agents and the message bus.
+ECHO Agent Orchestrator
+Boots all 21 agents and manages the full autonomous operation.
 """
 
 import asyncio
 import logging
-import os
 import signal
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 from bus import bus
+
+# Import all 21 agents
 from agents.ceo import CEOAgent
 from agents.ar import ARAgent
 from agents.production import ProductionAgent
@@ -41,57 +43,61 @@ from agents.hub import HubAgent
 from agents.vault import VaultAgent
 
 ALL_AGENTS = [
-    CEOAgent,
-    ARAgent,
-    ProductionAgent,
-    DistributionAgent,
-    MarketingAgent,
-    SocialAgent,
-    FinanceAgent,
-    LegalAgent,
-    AnalyticsAgent,
-    CreativeAgent,
-    SyncAgent,
-    ArtistDevAgent,
-    PRAgent,
-    CommsAgent,
-    QCAgent,
-    InfrastructureAgent,
-    IntakeAgent,
-    MerchAgent,
-    YouTubeAgent,
-    HubAgent,
-    VaultAgent,
+    CEOAgent, ARAgent, ProductionAgent, DistributionAgent, MarketingAgent,
+    SocialAgent, FinanceAgent, LegalAgent, AnalyticsAgent, CreativeAgent,
+    SyncAgent, ArtistDevAgent, PRAgent, CommsAgent, QCAgent,
+    InfrastructureAgent, IntakeAgent, MerchAgent, YouTubeAgent, HubAgent, VaultAgent,
 ]
 
 
 async def main():
-    logger.info("ECHO Agent Network starting...")
-    logger.info(f"Loading {len(ALL_AGENTS)} agents")
+    logger.info("=" * 60)
+    logger.info("  ECHO — AI Music Company")
+    logger.info("  Booting all 21 agents...")
+    logger.info("=" * 60)
 
     await bus.connect()
+    logger.info("Message bus connected")
 
-    agent_instances = [AgentClass() for AgentClass in ALL_AGENTS]
+    agents = []
+    tasks = []
 
-    tasks = [asyncio.create_task(agent.start()) for agent in agent_instances]
+    for AgentClass in ALL_AGENTS:
+        agent = AgentClass()
+        agents.append(agent)
+
+    # Start all agents
+    for agent in agents:
+        task = asyncio.create_task(agent.start(), name=agent.agent_id)
+        tasks.append(task)
+        logger.info(f"  {agent.agent_name} starting...")
+
+    logger.info(f"\nAll {len(agents)} agents booted. ECHO is operational.\n")
+
+    # Handle graceful shutdown via event
+    shutdown_event = asyncio.Event()
+
+    def handle_shutdown():
+        logger.info("\nShutdown signal received...")
+        shutdown_event.set()
 
     loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, handle_shutdown)
 
-    def shutdown_handler():
-        logger.info("Shutdown signal received")
-        for task in tasks:
-            task.cancel()
+    await shutdown_event.wait()
 
-    loop.add_signal_handler(signal.SIGINT, shutdown_handler)
-    loop.add_signal_handler(signal.SIGTERM, shutdown_handler)
+    # Graceful shutdown — stop agents, then cancel tasks
+    logger.info("Stopping all agents...")
+    for agent in agents:
+        await agent.stop()
 
-    try:
-        await asyncio.gather(*tasks, return_exceptions=True)
-    finally:
-        for agent in agent_instances:
-            await agent.stop()
-        await bus.disconnect()
-        logger.info("ECHO Agent Network stopped")
+    for task in tasks:
+        task.cancel()
+
+    await asyncio.gather(*tasks, return_exceptions=True)
+    await bus.disconnect()
+    logger.info("ECHO shutdown complete.")
 
 
 if __name__ == "__main__":
