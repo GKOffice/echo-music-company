@@ -854,6 +854,232 @@ async def suggest_price(
 
 # ── Match Creators ────────────────────────────────────────────────────────────
 
+@router.get("/stats")
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    """Get Deal Room marketplace stats."""
+    result = await db.execute(
+        text("""
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'active') AS active_listings,
+                COUNT(*) FILTER (WHERE status = 'active' AND listing_type IN ('sell_master_points','sell_publishing_points')) AS points_for_sale,
+                COUNT(*) FILTER (WHERE status = 'active' AND listing_type = 'seek_cowriter') AS cowrite_opportunities,
+                COUNT(*) FILTER (WHERE status = 'completed') AS deals_completed
+            FROM deal_listings
+        """)
+    )
+    row = result.mappings().fetchone()
+    value_result = await db.execute(
+        text("SELECT COALESCE(SUM(cash_paid), 0) AS total_value FROM deals WHERE status = 'completed'")
+    )
+    total_value = float(value_result.scalar() or 0)
+    return {
+        "active_listings": int(row["active_listings"] or 0),
+        "points_for_sale": int(row["points_for_sale"] or 0),
+        "cowrite_opportunities": int(row["cowrite_opportunities"] or 0),
+        "deals_completed": int(row["deals_completed"] or 0),
+        "total_value_traded": total_value,
+    }
+
+
+# ── External Catalog ──────────────────────────────────────────────────────────
+
+class ExternalCatalogRequest(BaseModel):
+    user_id: str
+    artist_id: Optional[str] = None
+    title: str
+    isrc: Optional[str] = None
+    spotify_url: Optional[str] = None
+    apple_url: Optional[str] = None
+    youtube_url: Optional[str] = None
+    monthly_streams: Optional[int] = None
+    total_streams: Optional[int] = None
+    estimated_annual_revenue: Optional[float] = None
+    genre: Optional[str] = None
+    release_year: Optional[int] = None
+    rights_type: str = "master"
+
+
+@router.post("/external-catalog", status_code=201)
+async def submit_external_track(
+    req: ExternalCatalogRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Submit an existing track (not on Melodio) for Deal Room listing."""
+    catalog_id = str(uuid.uuid4())
+    await db.execute(
+        text("""
+            INSERT INTO external_catalog (
+                id, user_id, artist_id, title, isrc,
+                spotify_url, apple_url, youtube_url,
+                monthly_streams, total_streams, estimated_annual_revenue,
+                genre, release_year, rights_type, status
+            ) VALUES (
+                :id, :user_id, :artist_id, :title, :isrc,
+                :spotify_url, :apple_url, :youtube_url,
+                :monthly_streams, :total_streams, :estimated_annual_revenue,
+                :genre, :release_year, :rights_type, 'pending'
+            )
+        """),
+        {
+            "id": catalog_id,
+            "user_id": req.user_id,
+            "artist_id": req.artist_id,
+            "title": req.title,
+            "isrc": req.isrc,
+            "spotify_url": req.spotify_url,
+            "apple_url": req.apple_url,
+            "youtube_url": req.youtube_url,
+            "monthly_streams": req.monthly_streams or 0,
+            "total_streams": req.total_streams or 0,
+            "estimated_annual_revenue": req.estimated_annual_revenue,
+            "genre": req.genre,
+            "release_year": req.release_year,
+            "rights_type": req.rights_type,
+        },
+    )
+    await db.commit()
+    return {
+        "catalog_id": catalog_id,
+        "status": "pending",
+        "message": "Track submitted for verification. Stats will be populated within 24 hours.",
+    }
+
+
+@router.get("/external-catalog/{catalog_id}")
+async def get_external_catalog(
+    catalog_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get external catalog entry with streaming stats."""
+    result = await db.execute(
+        text("SELECT * FROM external_catalog WHERE id = :id"),
+        {"id": catalog_id},
+    )
+    row = result.mappings().fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Catalog entry not found")
+    return _serialize(dict(row))
+
+
+# ── Auction / Bidding ─────────────────────────────────────────────────────────
+
+class PlaceBidRequest(BaseModel):
+    bidder_id: str
+    bid_amount: float
+    message: Optional[str] = None
+
+
+@router.post("/listings/{listing_id}/bid", status_code=201)
+async def place_bid(
+    listing_id: str,
+    req: PlaceBidRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Place a bid on an auction listing."""
+    from datetime import datetime, timezone
+
+    listing_result = await db.execute(
+        text("""
+            SELECT id, creator_id, status, listing_mode,
+                   auction_ends_at, highest_bid_amount, bid_count, title
+            FROM deal_listings WHERE id = :id
+        """),
+        {"id": listing_id},
+    )
+    listing = listing_result.mappings().fetchone()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if listing["listing_mode"] != "auction":
+        raise HTTPException(status_code=400, detail="Listing is not in auction mode")
+    if listing["status"] != "active":
+        raise HTTPException(status_code=400, detail=f"Listing is {listing['status']}")
+    if listing["auction_ends_at"] and listing["auction_ends_at"] < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Auction has ended")
+    if str(listing["creator_id"]) == req.bidder_id:
+        raise HTTPException(status_code=400, detail="Cannot bid on your own listing")
+
+    current_high = float(listing["highest_bid_amount"] or 0)
+    min_bid = current_high + 100 if current_high > 0 else 0
+    if req.bid_amount <= current_high:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bid must exceed current highest bid of ${current_high:.2f}. Minimum: ${min_bid:.2f}",
+        )
+
+    offer_id = str(uuid.uuid4())
+    expires_at = listing["auction_ends_at"]
+
+    await db.execute(
+        text("""
+            INSERT INTO deal_offers (
+                id, listing_id, offerer_id, offer_type,
+                cash_amount, message, expires_at, status
+            ) VALUES (
+                :id, :listing_id, :bidder_id, 'cash',
+                :amount, :message, :expires_at, 'pending'
+            )
+        """),
+        {
+            "id": offer_id,
+            "listing_id": listing_id,
+            "bidder_id": req.bidder_id,
+            "amount": req.bid_amount,
+            "message": req.message,
+            "expires_at": expires_at,
+        },
+    )
+
+    # Update listing bid tracking
+    await db.execute(
+        text("""
+            UPDATE deal_listings
+            SET highest_bid_amount = :amount,
+                bid_count = bid_count + 1
+            WHERE id = :id
+        """),
+        {"id": listing_id, "amount": req.bid_amount},
+    )
+    await db.commit()
+    return {
+        "offer_id": offer_id,
+        "listing_id": listing_id,
+        "bid_amount": req.bid_amount,
+        "status": "placed",
+    }
+
+
+@router.get("/listings/{listing_id}/bids")
+async def get_bids(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all bids for an auction listing."""
+    listing_result = await db.execute(
+        text("SELECT listing_mode FROM deal_listings WHERE id = :id"),
+        {"id": listing_id},
+    )
+    listing = listing_result.mappings().fetchone()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+
+    result = await db.execute(
+        text("""
+            SELECT do2.id, do2.offerer_id, do2.cash_amount AS bid_amount,
+                   do2.created_at, do2.status,
+                   u.name AS bidder_name
+            FROM deal_offers do2
+            JOIN users u ON do2.offerer_id = u.id
+            WHERE do2.listing_id = :listing_id
+            ORDER BY do2.cash_amount DESC
+        """),
+        {"listing_id": listing_id},
+    )
+    rows = result.mappings().all()
+    return {"bids": [_serialize(dict(r)) for r in rows], "count": len(rows)}
+
+
 @router.get("/match")
 async def match_creators(
     listing_type: str = Query(...),
