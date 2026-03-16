@@ -384,7 +384,7 @@ class DistributionAgent(BaseAgent):
             )
 
         # Generate 12-digit UPC with valid check digit
-        prefix = "884502"  # ECHO label prefix
+        prefix = "884502"  # Melodio label prefix
         random_digits = "".join(random.choices(string.digits, k=5))
         digits_11 = prefix + random_digits
 
@@ -438,8 +438,8 @@ class DistributionAgent(BaseAgent):
                 )
 
         artist_name = release.get("stage_name") or release.get("artist_name") or "Unknown Artist"
-        bio = release.get("bio") or f"{artist_name} is a recording artist on ECHO Records."
-        streaming_url = release.get("spotify_url") or f"echo-music.com/releases/{release_id}"
+        bio = release.get("bio") or f"{artist_name} is a recording artist on Melodio."
+        streaming_url = release.get("spotify_url") or f"melodio.io/releases/{release_id}"
 
         pitch_text = (
             f"PLAYLIST PITCH — {artist_name}: '{release.get('title')}'\n\n"
@@ -570,7 +570,7 @@ class DistributionAgent(BaseAgent):
         if not release:
             return AgentResult(success=False, task_id=task.task_id, agent_id=self.agent_id, error="Release not found")
 
-        presave_url = f"https://echo-music.com/presave/{release_id}"
+        presave_url = f"https://melodio.io/presave/{release_id}"
 
         await self.db_execute(
             """UPDATE releases

@@ -9,7 +9,7 @@ const stats = [
   { label: "Total Streams", value: "4.2M", change: "+8%", up: true },
   { label: "Revenue MTD", value: "$8,412", change: "+23%", up: true },
   {
-    label: "ECHO Score",
+    label: "Melodio Score",
     value: "94",
     change: "💎 Diamond",
     tier: true,
@@ -48,9 +48,9 @@ const releases = [
 
 const activity = [
   { icon: "📀", text: "Midnight Drive added to 3 editorial playlists", time: "2h ago", accent: "#8b5cf6" },
-  { icon: "💰", text: "2 ECHO Points sold · $500 earned", time: "5h ago", accent: "#10b981" },
+  { icon: "💰", text: "2 Melodio Points sold · $500 earned", time: "5h ago", accent: "#10b981" },
   { icon: "🏆", text: "Milestone: 1M streams on Midnight Drive", time: "1d ago", accent: "#f59e0b" },
-  { icon: "📈", text: "Monthly listeners up 12% — ECHO Score raised to 94", time: "2d ago", accent: "#8b5cf6" },
+  { icon: "📈", text: "Monthly listeners up 12% — Melodio Score raised to 94", time: "2d ago", accent: "#8b5cf6" },
   { icon: "💰", text: "Royalty payout: $4,960 distributed to 12 holders", time: "3d ago", accent: "#10b981" },
   { icon: "🎤", text: "Distribution Agent deployed Neon Fever to 47 DSPs", time: "1w ago", accent: "#9ca3af" },
 ];
@@ -185,7 +185,7 @@ export default function DashboardPage() {
 
             {/* ECHO Points */}
             <section className="bg-[#13131a] rounded-xl border border-[#2a2a3a] p-6">
-              <h2 className="text-lg font-bold text-[#f9fafb] mb-5">ECHO Points</h2>
+              <h2 className="text-lg font-bold text-[#f9fafb] mb-5">Melodio Points</h2>
 
               {/* Progress */}
               <div className="mb-5">

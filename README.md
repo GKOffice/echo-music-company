@@ -1,22 +1,23 @@
-# ECHO — Autonomous AI Music Company
+# 🎵 Melodio — AI Music Company
 
 > **Own the Sound** — 21 AI agents running a fully autonomous music label, 24/7.
 
+**melodio.io** | **melodio.studio**
+
 ---
 
-## Overview
+## What is Melodio?
 
-ECHO is a fully autonomous AI music company built on a 21-agent LangGraph framework. Every function of a modern music label — A&R, recording, distribution, marketing, legal, finance, and fan monetization — is handled by specialized AI agents operating in concert.
+Melodio is a complete AI-powered music company with 6 business lines:
 
-**ECHO Points** enable fans and investors to buy fractional royalty ownership stakes in individual tracks, earning streaming royalties proportional to their holdings.
+1. **Melodio Label** — Sign artists, develop careers, 21 AI agents working 24/7
+2. **Melodio Publishing** — Worldwide royalty collection, sync licensing
+3. **Melodio Open Platform** — À la carte services for independent artists
+4. **Melodio for Labels** — White-label points infrastructure for external labels
+5. **Melodio Points Store + Exchange** — Fans buy fractional royalty rights on songs
+6. **Melodio Producer Hub** — Beat marketplace with AI matching
 
-**Six business lines:**
-1. **ECHO Label** — Sign artists, develop careers, 21 AI agents working 24/7
-2. **ECHO Publishing** — Worldwide royalty collection, sync licensing
-3. **ECHO Open Platform** — À la carte services for independent artists
-4. **ECHO For Labels** — White-label points infrastructure for external labels
-5. **ECHO Points Store** — Fans buy fractional royalty rights on songs
-6. **ECHO Producer Hub** — Beat marketplace with AI matching
+**Melodio Points** enable fans and investors to buy fractional royalty ownership stakes in individual tracks, earning streaming royalties proportional to their holdings.
 
 ---
 
@@ -92,7 +93,7 @@ echo/
 | **Social** | Content calendar, post scheduling, engagement monitoring |
 | **Finance** | Royalty processing, advance tracking, recoupment |
 | **Legal** | Contract drafting, copyright registration, DocuSign |
-| **Analytics** | Streaming insights, ECHO scoring, artist reporting |
+| **Analytics** | Streaming insights, Melodio scoring, artist reporting |
 | **Creative** | Artwork review, brand guidelines, visual assets |
 | **Sync** | Sync licensing pitches, brief processing, catalog search |
 | **Artist Dev** | Growth plans, mentorship, brand workshops |
@@ -104,18 +105,16 @@ echo/
 | **Merch** | Merch drops, store management, fulfillment |
 | **YouTube** | Channel management, Content ID, Shorts strategy |
 | **Hub** | Beat marketplace scoring, producer-artist matching |
-| **Vault** | ECHO Points issuance, royalty distribution to holders |
+| **Vault** | Melodio Points issuance, royalty distribution to holders |
 
 ---
 
-## Running Locally
+## Quick Start
 
 ### Prerequisites
 - Docker + Docker Compose
 - Node.js 20+ (for local web dev)
 - Python 3.12+ (for local API/agents dev)
-
-### Quick Start
 
 ```bash
 # 1. Clone and configure
@@ -174,7 +173,7 @@ GET  /api/v1/releases/{id}                  Get release
 GET  /api/v1/releases/{id}/tracks           Release tracks
 POST /api/v1/releases/{id}/tracks           Add track
 
-POST /api/v1/points/purchase                Buy ECHO Points
+POST /api/v1/points/purchase                Buy Melodio Points
 GET  /api/v1/points/my-portfolio            Portfolio view
 GET  /api/v1/points/track/{id}/availability Check availability
 
@@ -226,21 +225,9 @@ GET  /api/v1/hub/beats/{id}                 Get beat
 | 01 | Scout | Complete |
 | 02 | Sign | Complete |
 | **03** | **Release Engine** | **In Progress** |
-| 04 | Monetize (ECHO Points) | Upcoming |
+| 04 | Monetize (Melodio Points) | Upcoming |
 | 05 | Scale (Sync + Catalog) | Upcoming |
 
 ---
 
-## Agent Architecture
-
-All 21 agents inherit from `BaseAgent` which provides:
-- Async PostgreSQL connection pool via `asyncpg`
-- Redis message bus (pub/sub + streams) via `bus.py`
-- Task processing loop — each agent reads from its own Redis Stream
-- DB helpers: `db_fetch`, `db_fetchrow`, `db_execute`
-- Audit logging: `log_audit`
-- Inter-agent messaging: `send_message`, `broadcast`
-
----
-
-*Blueprint v18.0 · CEO: AI · Phase 3 in progress*
+*Blueprint v18.0 · CEO: B (AI) · Owner: Mike B. · melodio.io*

@@ -175,7 +175,7 @@ class YouTubeAgent(BaseAgent):
                     f"Lyrics appear on beat. Color palette from artwork. "
                     f"Mood: {mood or 'match the song'}. Genre feel: {genre or 'universal'}."
                 ),
-                "must_include": ["Artist name lower-third", "Track title card", "ECHO logo end card"],
+                "must_include": ["Artist name lower-third", "Track title card", "Melodio logo end card"],
                 "avoid": ["Stock footage", "Distracting backgrounds that compete with lyrics"],
             },
             "visualizer": {
@@ -298,7 +298,7 @@ class YouTubeAgent(BaseAgent):
                 f"#{artist_name.replace(' ', '')}",
                 "#NewMusic",
                 f"#NewMusic{CURRENT_YEAR}",
-                "#ECHO",
+                "#Melodio",
             ],
         }
 
@@ -338,8 +338,8 @@ class YouTubeAgent(BaseAgent):
 
         description_lines.extend([
             "",
-            f"© {CURRENT_YEAR} ECHO Music Group. All rights reserved.",
-            "Distributed by ECHO Distribution.",
+            f"© {CURRENT_YEAR} Melodio. All rights reserved.",
+            "Distributed by Melodio Distribution.",
         ])
 
         description = "\n".join(description_lines)
@@ -355,8 +355,8 @@ class YouTubeAgent(BaseAgent):
             f"official music video {CURRENT_YEAR}",
             "new music",
             f"new music {CURRENT_YEAR}",
-            "ECHO music",
-            "ECHO records",
+            "Melodio music",
+            "Melodio records",
         ]
 
         for comp in comparable_artists[:4]:

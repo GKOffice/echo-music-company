@@ -17,7 +17,7 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-10 py-4 bg-[#0a0a0f]/90 backdrop-blur-xl border-b border-[#2a2a3a]">
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2 shrink-0">
-        <span className="text-[#8b5cf6] font-black text-xl tracking-tight">⚡ ECHO</span>
+        <span className="text-[#8b5cf6] font-black text-xl tracking-tight">🎵 Melodio</span>
       </Link>
 
       {/* Center links */}

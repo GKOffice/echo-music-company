@@ -156,7 +156,7 @@ export default function PointDropPage() {
                 <h1 className="text-4xl font-black text-[#f9fafb]">{artist.name}</h1>
               </div>
               <div className="absolute top-5 right-5 bg-[#0a0a0f]/80 backdrop-blur text-[#f9fafb] font-bold px-3 py-1.5 rounded-lg border border-[#2a2a3a] text-sm">
-                ⚡ {aiConfidence} ECHO Score
+                ⚡ {aiConfidence} Melodio Score
               </div>
             </div>
 
@@ -234,9 +234,9 @@ export default function PointDropPage() {
               <h3 className="font-bold text-[#f9fafb] mb-5">How It Works</h3>
               <div className="space-y-5">
                 {[
-                  { step: "1", title: "Buy Points", desc: "Each point represents fractional royalty ownership in the artist's current and future releases on ECHO." },
+                  { step: "1", title: "Buy Points", desc: "Each point represents fractional royalty ownership in the artist's current and future releases on Melodio." },
                   { step: "2", title: "Earn Monthly", desc: "Streaming royalties are calculated monthly and distributed directly to point holders based on ownership percentage." },
-                  { step: "3", title: "Hold or Trade", desc: "Points are locked for 12 months from purchase. After that, they're freely tradeable on the ECHO marketplace." },
+                  { step: "3", title: "Hold or Trade", desc: "Points are locked for 12 months from purchase. After that, they're freely tradeable on the Melodio marketplace." },
                 ].map((item) => (
                   <div key={item.step} className="flex items-start gap-4">
                     <div className="w-7 h-7 rounded-full bg-[#8b5cf6]/20 text-[#8b5cf6] text-sm font-bold flex items-center justify-center shrink-0">
@@ -260,7 +260,7 @@ export default function PointDropPage() {
                   <div className="text-5xl mb-4">🎉</div>
                   <h3 className="text-xl font-black text-[#f9fafb] mb-2">Points Secured!</h3>
                   <p className="text-[#9ca3af] text-sm mb-6">
-                    You now own {qty} ECHO {qty === 1 ? "Point" : "Points"} in {artist.name}. Royalties will flow monthly.
+                    You now own {qty} Melodio {qty === 1 ? "Point" : "Points"} in {artist.name}. Royalties will flow monthly.
                   </p>
                   <div className="bg-[#0a0a0f] rounded-xl border border-[#2a2a3a] p-4 mb-6">
                     <div className="flex justify-between text-sm mb-2">
@@ -335,7 +335,7 @@ export default function PointDropPage() {
                   </button>
 
                   <p className="text-xs text-[#9ca3af] text-center mt-4 leading-relaxed">
-                    By purchasing you agree to ECHO&apos;s point holder terms. 12-month holding period applies.
+                    By purchasing you agree to Melodio&apos;s point holder terms. 12-month holding period applies.
                   </p>
                 </div>
               )}

@@ -10,15 +10,15 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "ECHO — Own the Sound",
-    template: "%s | ECHO",
+    default: "Melodio — Own the Sound",
+    template: "%s | Melodio",
   },
   description:
-    "ECHO is an autonomous AI music company. Discover, invest, and earn royalties from the music you believe in.",
+    "Melodio is an autonomous AI music company. Discover, invest, and earn royalties from the music you believe in.",
   keywords: ["music", "royalties", "AI", "streaming", "investment", "artists"],
-  authors: [{ name: "ECHO" }],
+  authors: [{ name: "Melodio" }],
   openGraph: {
-    title: "ECHO — Own the Sound",
+    title: "Melodio — Own the Sound",
     description: "Autonomous AI music company. Own the music you love.",
     type: "website",
   },

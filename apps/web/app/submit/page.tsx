@@ -288,7 +288,7 @@ export default function SubmitPage() {
             </button>
 
             <p className="text-xs text-[#9ca3af] text-center">
-              By submitting you agree to ECHO&apos;s submission terms. We review every demo within 48 hours.
+              By submitting you agree to Melodio&apos;s submission terms. We review every demo within 48 hours.
             </p>
           </form>
         )}

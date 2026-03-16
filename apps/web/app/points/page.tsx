@@ -156,7 +156,7 @@ function ArtistCard({ artist, colorIndex }: { artist: Artist; colorIndex: number
             <div className="text-[#f9fafb] font-bold text-lg">${artist.pricePerPoint}</div>
           </div>
           <div className="text-right">
-            <div className="text-[#9ca3af] text-xs">ECHO Score</div>
+            <div className="text-[#9ca3af] text-xs">Melodio Score</div>
             <div className="text-[#f9fafb] font-bold text-lg">{artist.echoScore}</div>
           </div>
         </div>
@@ -209,7 +209,7 @@ export default function PointsStorePage() {
             </span>
           </h1>
           <p className="text-[#9ca3af] text-lg">
-            Buy ECHO Points and earn royalties every time your artist streams. Back the music you believe in.
+            Buy Melodio Points and earn royalties every time your artist streams. Back the music you believe in.
           </p>
         </div>
       </section>
@@ -249,12 +249,12 @@ export default function PointsStorePage() {
       {/* How points work banner */}
       <section className="border-t border-[#2a2a3a] bg-[#13131a] py-16 px-4">
         <div className="max-w-5xl mx-auto text-center">
-          <h2 className="text-2xl font-black text-[#f9fafb] mb-10">How ECHO Points Work</h2>
+          <h2 className="text-2xl font-black text-[#f9fafb] mb-10">How Melodio Points Work</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               { step: "01", title: "Buy Points", desc: "Purchase fractional royalty ownership in an artist's release catalog. No lock-in, transparent pricing." },
               { step: "02", title: "Earn Royalties", desc: "As streams flow in, royalties are distributed proportionally to all point holders each month." },
-              { step: "03", title: "Trade or Hold", desc: "After the 12-month holding period, points can be traded freely on the ECHO marketplace." },
+              { step: "03", title: "Trade or Hold", desc: "After the 12-month holding period, points can be traded freely on the Melodio marketplace." },
             ].map((item) => (
               <div key={item.step} className="text-left">
                 <div className="text-4xl font-black text-[#8b5cf6]/30 mb-3">{item.step}</div>

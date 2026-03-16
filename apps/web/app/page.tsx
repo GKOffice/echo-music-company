@@ -20,7 +20,7 @@ const howItWorks = [
       "Submit your demo — AI reviews in minutes",
       "Keep 100% of your masters, always",
       "21 agents handle release, marketing & distribution",
-      "Drop ECHO Points to fans and get paid upfront",
+      "Drop Melodio Points to fans and get paid upfront",
     ],
     cta: "Submit Your Demo",
     href: "/submit",
@@ -43,7 +43,7 @@ const howItWorks = [
     icon: "🎛️",
     color: "#f59e0b",
     steps: [
-      "Upload beats to the ECHO Beat Hub",
+      "Upload beats to the Melodio Beat Hub",
       "AI scores quality and sync readiness",
       "Hub Agent matches you to signed artists",
       "Get paid via smart contracts instantly",
@@ -54,7 +54,7 @@ const howItWorks = [
 ];
 
 const TICKER_EVENTS = [
-  "💎 Nova Vex just dropped 15 ECHO Points · $250/pt",
+  "💎 Nova Vex just dropped 15 Melodio Points · $250/pt",
   "🔥 Lyra Bloom hit 142K monthly listeners",
   "⚡ Melo Cipher · 3 points sold in the last hour",
   "🎵 Dark Matter EP cleared by QC Agent",
@@ -62,7 +62,7 @@ const TICKER_EVENTS = [
   "💰 $4,960 paid to Nova Vex holders this month",
   "🎤 New submission from Lagos, Nigeria — A&R reviewing",
   "🌟 Zara Sol added to 3 editorial playlists",
-  "⚡ ECHO Score updated for 12 artists",
+  "⚡ Melodio Score updated for 12 artists",
   "🎛️ Beat Hub: 47 new beats scored this week",
 ];
 
@@ -188,7 +188,7 @@ export default function HomePage() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              ECHO Works
+              Melodio Works
             </span>
           </h2>
           <p className="text-[#9ca3af] text-lg max-w-2xl mx-auto">
@@ -270,7 +270,7 @@ export default function HomePage() {
           </span>
         </h2>
         <p className="text-[#9ca3af] text-lg max-w-2xl mx-auto mb-10">
-          ECHO Points give fans fractional royalty ownership in the artists they love. Buy points.
+          Melodio Points give fans fractional royalty ownership in the artists they love. Buy points.
           Earn every time they stream. Share in the success.
         </p>
         <Link
@@ -287,7 +287,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
             <div className="flex items-center gap-2">
-              <span className="text-[#8b5cf6] font-black text-xl">⚡ ECHO</span>
+              <span className="text-[#8b5cf6] font-black text-xl">🎵 Melodio</span>
               <span className="text-[#9ca3af] text-sm ml-2">Autonomous AI Music Company</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-[#9ca3af]">
@@ -298,7 +298,7 @@ export default function HomePage() {
           </div>
           <div className="border-t border-[#2a2a3a] pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-[#9ca3af]">
             <span className="font-semibold text-[#f9fafb]">No long-term contracts. Ever.</span>
-            <span>© {new Date().getFullYear()} ECHO — All rights to artists</span>
+            <span>© {new Date().getFullYear()} Melodio — All rights to artists</span>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-[#10b981] rounded-full animate-pulse" />
               All 21 agents operational

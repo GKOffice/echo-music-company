@@ -68,7 +68,7 @@ FOR IMMEDIATE RELEASE
 
 LISTEN: {listen_link}
 ABOUT {artist_name_upper}: {bio}
-CONTACT: press@echo-music.com
+CONTACT: press@melodio.io
 """
 
 
@@ -133,7 +133,7 @@ class PRAgent(BaseAgent):
         title = release["title"] or "Untitled"
         release_type = (release.get("release_type") or "SINGLE").upper()
         city = release.get("city") or "Los Angeles"
-        bio = release.get("bio") or f"{artist_name} is an independent artist on the ECHO label."
+        bio = release.get("bio") or f"{artist_name} is an independent artist on the Melodio label."
         genre = release.get("genre") or "music"
         release_date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
@@ -169,7 +169,7 @@ class PRAgent(BaseAgent):
             content = {}
 
         hook = content.get("hook", f"The {genre} artist returns with a bold new {release_type.lower()}.")
-        p1 = content.get("p1", f"{artist_name} has released a new {release_type.lower()} titled '{title}' via ECHO.")
+        p1 = content.get("p1", f"{artist_name} has released a new {release_type.lower()} titled '{title}' via Melodio.")
         p2 = content.get("p2", f"The track showcases {artist_name}'s evolving sound and artistry.")
         quote = content.get("quote", f"This one means a lot to me. Can't wait for everyone to hear it.")
         background = content.get("background", bio)
@@ -185,7 +185,7 @@ class PRAgent(BaseAgent):
             paragraph_2=p2,
             artist_quote=quote,
             background=background,
-            listen_link="linktr.ee/echo",
+            listen_link="linktr.ee/melodio",
             artist_name_upper=artist_name.upper(),
             bio=bio[:200],
         )
@@ -225,7 +225,7 @@ class PRAgent(BaseAgent):
                     "subject": f"NEW {genre.upper()}: {artist_name} — '{title}'",
                     "body_preview": (
                         f"Hi, I'm reaching out about {artist_name}'s new release '{title}'. "
-                        f"This {genre} track is available now via ECHO. "
+                        f"This {genre} track is available now via Melodio. "
                         f"Happy to send over the full EPK and streaming link."
                     ),
                     "lead_time_needed_weeks": outlet["lead_time_weeks"],
@@ -266,13 +266,13 @@ class PRAgent(BaseAgent):
             "artist_name": artist["name"],
             "genre": artist.get("genre"),
             "city": artist.get("city"),
-            "bio": artist.get("bio") or f"{artist['name']} is an artist on the ECHO label.",
+            "bio": artist.get("bio") or f"{artist['name']} is an artist on the Melodio label.",
             "photo_url": artist.get("profile_photo_url"),
             "social_links": social_links,
             "discography": [dict(r) for r in releases],
-            "press_contact": "press@echo-music.com",
-            "booking_contact": "booking@echo-music.com",
-            "label": "ECHO Music Group",
+            "press_contact": "press@melodio.io",
+            "booking_contact": "booking@melodio.io",
+            "label": "Melodio",
             "sections": [
                 "artist_bio",
                 "discography",

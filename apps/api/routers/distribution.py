@@ -264,8 +264,8 @@ async def submit_playlist_pitch(
             )
 
     artist_name = release.get("stage_name") or release.get("artist_name") or "Unknown Artist"
-    bio = release.get("bio") or f"{artist_name} is a recording artist on ECHO Records."
-    streaming_url = release.get("spotify_url") or f"echo-music.com/releases/{release_id}"
+    bio = release.get("bio") or f"{artist_name} is a recording artist on Melodio."
+    streaming_url = release.get("spotify_url") or f"melodio.io/releases/{release_id}"
 
     pitch_text = (
         f"PLAYLIST PITCH — {artist_name}: '{release.get('title')}'\n\n"
@@ -491,7 +491,7 @@ async def create_presave_link(
     if not release:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
 
-    presave_url = f"https://echo-music.com/presave/{body.release_id}"
+    presave_url = f"https://melodio.io/presave/{body.release_id}"
 
     await db.execute(
         text("""UPDATE releases
