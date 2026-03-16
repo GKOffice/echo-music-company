@@ -51,6 +51,19 @@ const howItWorks = [
     cta: "Apply as Producer",
     href: "/submit",
   },
+  {
+    title: "For Songwriters",
+    icon: "✍️",
+    color: "#10b981",
+    steps: [
+      "Register your catalog — we handle PRO registration",
+      "We collect worldwide (ASCAP/BMI/MLC/60+ territories)",
+      "Sell publishing points in the Deal Room",
+      "Find co-write partners by genre and style",
+    ],
+    cta: "Register My Songs",
+    href: "/songwriters",
+  },
 ];
 
 const TICKER_EVENTS = [
@@ -192,11 +205,11 @@ export default function HomePage() {
             </span>
           </h2>
           <p className="text-[#9ca3af] text-lg max-w-2xl mx-auto">
-            One platform for artists, fans, and producers — all powered by 21 autonomous AI agents.
+            One platform for artists, fans, producers, and songwriters — all powered by 21 autonomous AI agents.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {howItWorks.map((col) => (
             <div
               key={col.title}

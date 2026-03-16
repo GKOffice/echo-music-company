@@ -7,7 +7,8 @@ const navLinks = [
   { label: "Discover", href: "/" },
   { label: "Points Store", href: "/points" },
   { label: "Deal Room", href: "/dealroom" },
-  { label: "For Artists", href: "/dashboard" },
+  { label: "For Artists", href: "/submit" },
+  { label: "Songwriters", href: "/songwriters" },
   { label: "Producers", href: "/#hub" },
 ];
 
