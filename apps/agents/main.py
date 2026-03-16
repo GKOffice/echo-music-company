@@ -41,19 +41,21 @@ from agents.merch import MerchAgent
 from agents.youtube import YouTubeAgent
 from agents.hub import HubAgent
 from agents.vault import VaultAgent
+from agents.deal_room import DealRoomAgent
 
 ALL_AGENTS = [
     CEOAgent, ARAgent, ProductionAgent, DistributionAgent, MarketingAgent,
     SocialAgent, FinanceAgent, LegalAgent, AnalyticsAgent, CreativeAgent,
     SyncAgent, ArtistDevAgent, PRAgent, CommsAgent, QCAgent,
-    InfrastructureAgent, IntakeAgent, MerchAgent, YouTubeAgent, HubAgent, VaultAgent,
+    InfrastructureAgent, IntakeAgent, MerchAgent, YouTubeAgent, HubAgent,
+    VaultAgent, DealRoomAgent,
 ]
 
 
 async def main():
     logger.info("=" * 60)
-    logger.info("  ECHO — AI Music Company")
-    logger.info("  Booting all 21 agents...")
+    logger.info("  Melodio — AI Music Company")
+    logger.info("  Booting all 22 agents...")
     logger.info("=" * 60)
 
     await bus.connect()
@@ -72,7 +74,7 @@ async def main():
         tasks.append(task)
         logger.info(f"  {agent.agent_name} starting...")
 
-    logger.info(f"\nAll {len(agents)} agents booted. ECHO is operational.\n")
+    logger.info(f"\nAll {len(agents)} agents booted. Melodio is operational.\n")
 
     # Handle graceful shutdown via event
     shutdown_event = asyncio.Event()
