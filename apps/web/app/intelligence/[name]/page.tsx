@@ -196,8 +196,14 @@ export default function IntelligenceReportPage() {
               </div>
             )}
             <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-400">
-              {((report as any).sources_used || []).map((s: string) => <span key={s} className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-[#10b981] rounded-full" />{s}</span>)}
-              {((report as any).sources_unavailable || (report as any).sources_failed || []).map((s: string) => <span key={s} className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-gray-600 rounded-full" />{s} (no data)</span>)}
+              {((report as any).sources_used || []).map((s: any) => {
+                const label = typeof s === "string" ? s : s?.source || String(s);
+                return <span key={label} className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-[#10b981] rounded-full" />{label}</span>;
+              })}
+              {((report as any).sources_unavailable || (report as any).sources_failed || []).map((s: any, i: number) => {
+                const label = typeof s === "string" ? s : s?.source || String(s);
+                return <span key={`${label}-${i}`} className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-gray-600 rounded-full" />{label} (no data)</span>;
+              })}
             </div>
           </div>
         </div>
@@ -414,7 +420,7 @@ export default function IntelligenceReportPage() {
         {/* Footer meta */}
         <div className="text-center text-gray-600 text-xs pb-8">
           Report generated {(report as any).generated_at ? new Date((report as any).generated_at).toLocaleString() : "just now"} • 
-          Sources: {((report as any).sources_used || []).join(", ") || "AI analysis"}
+          Sources: {((report as any).sources_used || []).map((s: any) => typeof s === "string" ? s : s?.source).join(", ") || "AI analysis"}
         </div>
       </div>
     </main>
