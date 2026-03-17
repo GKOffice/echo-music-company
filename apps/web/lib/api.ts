@@ -572,3 +572,421 @@ export async function fetchPlatformStats(): Promise<PlatformStats | null> {
     return null;
   }
 }
+
+// ─── New Feature Interfaces ────────────────────────────────────────────────────
+
+export interface OwnedPointEntry {
+  artistId: string;
+  artistName: string;
+  genre: string;
+  points: number;
+  purchasePrice: number;
+  currentValue: number;
+  royaltiesEarned: number;
+  badgeEmoji: string;
+}
+
+export interface MonthlyRoyalty {
+  month: string;
+  royalties: number;
+  streams: number;
+}
+
+export interface FanPortfolio {
+  totalPoints: number;
+  totalSpent: number;
+  totalEarned: number;
+  portfolioValue: number;
+  earningsHistory: number[];
+  earningsMonths: string[];
+  ownedPoints: OwnedPointEntry[];
+  monthlyBreakdown: MonthlyRoyalty[];
+  nextPayout: string;
+}
+
+export interface ArtistSocialLinks {
+  spotify?: string;
+  instagram?: string;
+  tiktok?: string;
+  twitter?: string;
+}
+
+export interface ArtistRelease {
+  id: string;
+  title: string;
+  releaseDate: string;
+  streams: number;
+  status: "live" | "upcoming" | "processing";
+}
+
+export interface ArtistScoreBreakdown {
+  streaming: number;
+  engagement: number;
+  playlistPotential: number;
+  growthTrajectory: number;
+}
+
+export interface ArtistProfile {
+  id: string;
+  slug: string;
+  name: string;
+  genre: string;
+  bio: string;
+  monthlyListeners: number;
+  totalStreams: number;
+  pointsAvailable: number;
+  pointsTotal: number;
+  pricePerPoint: number;
+  melodioScore: number;
+  scoreBreakdown: ArtistScoreBreakdown;
+  social: ArtistSocialLinks;
+  releases: ArtistRelease[];
+}
+
+export interface AmbassadorReferral {
+  maskedEmail: string;
+  signupDate: string;
+  status: "active" | "churned";
+  commission: number;
+}
+
+export interface AmbassadorData {
+  isAmbassador: boolean;
+  totalReferrals: number;
+  activeReferrals: number;
+  commissionEarned: number;
+  pendingCommission: number;
+  referralCode: string;
+  tier: "Bronze" | "Silver" | "Gold" | "Platinum";
+  nextTierReferrals: number;
+  referrals: AmbassadorReferral[];
+}
+
+export interface TransparencyStats {
+  totalRoyaltiesPaid: number;
+  totalPointsSold: number;
+  activeArtists: number;
+  activeFans: number;
+  avgRoyaltyPerArtist: number;
+}
+
+export interface TransparencyActivity {
+  id: string;
+  icon: string;
+  text: string;
+  time: string;
+}
+
+export interface MonthlyPayout {
+  month: string;
+  amount: number;
+}
+
+export interface TransparencyData {
+  stats: TransparencyStats;
+  activityFeed: TransparencyActivity[];
+  monthlyPayouts: MonthlyPayout[];
+}
+
+export interface Transaction {
+  id: string;
+  date: string;
+  type: "purchase" | "royalty" | "withdrawal" | "system";
+  description: string;
+  amount: number;
+  status: "completed" | "pending" | "failed";
+}
+
+export interface AppNotification {
+  id: string;
+  type: "royalty_payout" | "new_release" | "point_price_change" | "system_announcement";
+  title: string;
+  description: string;
+  time: string;
+  read: boolean;
+}
+
+export interface LeaderboardArtist {
+  rank: number;
+  name: string;
+  genre: string;
+  monthlyStreams: number;
+  melodioScore: number;
+  pointsSold: number;
+  badge: string;
+}
+
+export interface LeaderboardSupporter {
+  rank: number;
+  username: string;
+  pointsOwned: number;
+  totalSpent: number;
+  artistsSupported: number;
+  badge: string;
+}
+
+export interface LeaderboardRisingStar {
+  rank: number;
+  name: string;
+  genre: string;
+  growthPct: number;
+  weeksOnPlatform: number;
+  badge: string;
+}
+
+// ─── New API Functions ─────────────────────────────────────────────────────────
+
+const MOCK_FAN_PORTFOLIO: FanPortfolio = {
+  totalPoints: 47,
+  totalSpent: 4250,
+  totalEarned: 892,
+  portfolioValue: 5140,
+  earningsHistory: [120, 145, 198, 210, 98, 121],
+  earningsMonths: ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"],
+  ownedPoints: [
+    { artistId: "1", artistName: "Nova Vex", genre: "Afrobeats", points: 12, purchasePrice: 250, currentValue: 320, royaltiesEarned: 412, badgeEmoji: "💎" },
+    { artistId: "2", artistName: "Lyra Bloom", genre: "Alt R&B", points: 8, purchasePrice: 150, currentValue: 178, royaltiesEarned: 234, badgeEmoji: "🔥" },
+    { artistId: "5", artistName: "Melo Cipher", genre: "Hip-Hop", points: 5, purchasePrice: 200, currentValue: 240, royaltiesEarned: 156, badgeEmoji: "🔥" },
+    { artistId: "6", artistName: "Indie Haze", genre: "Indie Pop", points: 22, purchasePrice: 50, currentValue: 42, royaltiesEarned: 90, badgeEmoji: "⭐" },
+  ],
+  monthlyBreakdown: [
+    { month: "Mar 2026", royalties: 121, streams: 48200 },
+    { month: "Feb 2026", royalties: 98, streams: 39100 },
+    { month: "Jan 2026", royalties: 210, streams: 84000 },
+    { month: "Dec 2025", royalties: 198, streams: 79200 },
+    { month: "Nov 2025", royalties: 145, streams: 58000 },
+    { month: "Oct 2025", royalties: 120, streams: 48000 },
+  ],
+  nextPayout: "April 1, 2026",
+};
+
+const MOCK_ARTIST_PROFILES: ArtistProfile[] = [
+  {
+    id: "1",
+    slug: "nova-vex",
+    name: "Nova Vex",
+    genre: "Afrobeats",
+    bio: "Nova Vex is a London-based Afrobeats artist blending West African rhythms with UK club culture. Signed to Melodio's inaugural artist roster in 2025, she's amassed 284K monthly listeners in just 8 months.",
+    monthlyListeners: 284000,
+    totalStreams: 4200000,
+    pointsAvailable: 3,
+    pointsTotal: 15,
+    pricePerPoint: 250,
+    melodioScore: 94,
+    scoreBreakdown: { streaming: 24, engagement: 23, playlistPotential: 24, growthTrajectory: 23 },
+    social: { spotify: "#", instagram: "#", tiktok: "#", twitter: "#" },
+    releases: [
+      { id: "r1", title: "Midnight Drive", releaseDate: "2026-02-14", streams: 1240000, status: "live" },
+      { id: "r2", title: "Neon Fever", releaseDate: "2026-01-20", streams: 860000, status: "live" },
+      { id: "r3", title: "Dark Matter EP", releaseDate: "2026-03-22", streams: 0, status: "upcoming" },
+    ],
+  },
+  {
+    id: "2",
+    slug: "lyra-bloom",
+    name: "Lyra Bloom",
+    genre: "Alt R&B",
+    bio: "Lyra Bloom crafts introspective Alt R&B with lush production and raw lyricism. Based in Atlanta, her debut EP crossed 1.8M streams in its first quarter on Melodio.",
+    monthlyListeners: 142000,
+    totalStreams: 1800000,
+    pointsAvailable: 8,
+    pointsTotal: 20,
+    pricePerPoint: 150,
+    melodioScore: 87,
+    scoreBreakdown: { streaming: 22, engagement: 21, playlistPotential: 22, growthTrajectory: 22 },
+    social: { spotify: "#", instagram: "#", tiktok: "#", twitter: "#" },
+    releases: [
+      { id: "r4", title: "Lavender Haze", releaseDate: "2026-01-10", streams: 980000, status: "live" },
+      { id: "r5", title: "Glass", releaseDate: "2025-11-05", streams: 820000, status: "live" },
+    ],
+  },
+];
+
+const MOCK_AMBASSADOR: AmbassadorData = {
+  isAmbassador: true,
+  totalReferrals: 18,
+  activeReferrals: 14,
+  commissionEarned: 342.50,
+  pendingCommission: 28.75,
+  referralCode: "NOVA-2024",
+  tier: "Gold",
+  nextTierReferrals: 30,
+  referrals: [
+    { maskedEmail: "j***@gmail.com", signupDate: "2026-02-14", status: "active", commission: 24.50 },
+    { maskedEmail: "m***@yahoo.com", signupDate: "2026-02-01", status: "active", commission: 18.75 },
+    { maskedEmail: "s***@hotmail.com", signupDate: "2026-01-15", status: "churned", commission: 12.00 },
+    { maskedEmail: "a***@gmail.com", signupDate: "2026-01-10", status: "active", commission: 31.25 },
+    { maskedEmail: "r***@outlook.com", signupDate: "2025-12-20", status: "active", commission: 19.00 },
+  ],
+};
+
+const MOCK_TRANSPARENCY: TransparencyData = {
+  stats: { totalRoyaltiesPaid: 1240000, totalPointsSold: 2847, activeArtists: 127, activeFans: 8934, avgRoyaltyPerArtist: 976 },
+  activityFeed: [
+    { id: "1", icon: "💰", text: "Nova Vex holders received $412 royalty payout", time: "2 min ago" },
+    { id: "2", icon: "🎵", text: "Lyra Bloom dropped 8 new points at $150 each", time: "5 min ago" },
+    { id: "3", icon: "👤", text: "New fan purchased 3 Melo Cipher points", time: "12 min ago" },
+    { id: "4", icon: "📈", text: "Khai Dusk: Melodio Score rose to 87", time: "18 min ago" },
+    { id: "5", icon: "🎤", text: "Zara Sol released 'Golden Hour' on all platforms", time: "25 min ago" },
+    { id: "6", icon: "💰", text: "Melo Cipher holders received $290 payout", time: "31 min ago" },
+    { id: "7", icon: "✍️", text: "New artist Indie Haze joined Melodio", time: "45 min ago" },
+    { id: "8", icon: "🏆", text: "Nova Vex hit 4M total streams", time: "1 hr ago" },
+    { id: "9", icon: "🎵", text: "Khai Dusk 'Dark Mirror' added to Spotify editorial", time: "2 hr ago" },
+    { id: "10", icon: "💎", text: "All 15 Nova Vex Diamond points are now owned", time: "3 hr ago" },
+  ],
+  monthlyPayouts: [
+    { month: "Oct", amount: 142000 },
+    { month: "Nov", amount: 168000 },
+    { month: "Dec", amount: 198000 },
+    { month: "Jan", amount: 221000 },
+    { month: "Feb", amount: 195000 },
+    { month: "Mar", amount: 243000 },
+  ],
+};
+
+const MOCK_TRANSACTIONS: Transaction[] = [
+  { id: "t1", date: "2026-03-10", type: "royalty", description: "Nova Vex Q1 Royalty Payout", amount: 124.50, status: "completed" },
+  { id: "t2", date: "2026-03-01", type: "royalty", description: "Lyra Bloom Monthly Royalty", amount: 67.25, status: "completed" },
+  { id: "t3", date: "2026-02-28", type: "purchase", description: "Purchased 2 Nova Vex Points", amount: -500.00, status: "completed" },
+  { id: "t4", date: "2026-02-20", type: "royalty", description: "Melo Cipher Royalty Payout", amount: 45.00, status: "completed" },
+  { id: "t5", date: "2026-02-14", type: "purchase", description: "Purchased 3 Lyra Bloom Points", amount: -450.00, status: "completed" },
+  { id: "t6", date: "2026-02-01", type: "withdrawal", description: "Withdrawal to bank account ****4521", amount: -200.00, status: "completed" },
+  { id: "t7", date: "2026-01-25", type: "royalty", description: "Nova Vex Royalty Payout", amount: 98.75, status: "completed" },
+  { id: "t8", date: "2026-01-15", type: "purchase", description: "Purchased 5 Khai Dusk Points", amount: -500.00, status: "completed" },
+  { id: "t9", date: "2026-01-10", type: "withdrawal", description: "Withdrawal to PayPal", amount: -150.00, status: "pending" },
+  { id: "t10", date: "2026-01-05", type: "royalty", description: "Indie Haze Royalty Payout", amount: 22.00, status: "completed" },
+];
+
+const MOCK_NOTIFICATIONS: AppNotification[] = [
+  { id: "n1", type: "royalty_payout", title: "Royalty Payout Received", description: "You received $124.50 from Nova Vex quarterly royalties.", time: "2026-03-10T14:30:00Z", read: false },
+  { id: "n2", type: "new_release", title: "New Release: Dark Matter EP", description: "Nova Vex just dropped 'Dark Matter EP' — available on all streaming platforms.", time: "2026-03-09T10:00:00Z", read: false },
+  { id: "n3", type: "point_price_change", title: "Point Value Update", description: "Nova Vex point value increased to $320 (+28% from your purchase price).", time: "2026-03-08T09:15:00Z", read: true },
+  { id: "n4", type: "royalty_payout", title: "Royalty Payout Received", description: "You received $67.25 from Lyra Bloom monthly royalties.", time: "2026-03-01T12:00:00Z", read: true },
+  { id: "n5", type: "system_announcement", title: "New Feature: Leaderboards", description: "Check out the new Melodio Leaderboards — see top artists and supporters!", time: "2026-02-28T16:00:00Z", read: true },
+  { id: "n6", type: "new_release", title: "New Release: Golden Hour", description: "Zara Sol released 'Golden Hour' — now live on Spotify, Apple Music, and more.", time: "2026-02-25T11:30:00Z", read: true },
+  { id: "n7", type: "point_price_change", title: "Point Value Update", description: "Lyra Bloom point value increased to $178 (+19% from your purchase price).", time: "2026-02-20T08:00:00Z", read: true },
+  { id: "n8", type: "royalty_payout", title: "Royalty Payout Received", description: "You received $45.00 from Melo Cipher royalties.", time: "2026-02-20T07:45:00Z", read: true },
+];
+
+export async function fetchFanPortfolio(): Promise<FanPortfolio> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/fan/portfolio`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_FAN_PORTFOLIO;
+  }
+}
+
+export async function fetchArtistBySlug(slug: string): Promise<ArtistProfile | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/artists/${slug}`, { next: { revalidate: 60 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_ARTIST_PROFILES.find((a) => a.slug === slug) ?? MOCK_ARTIST_PROFILES[0];
+  }
+}
+
+export async function fetchAmbassador(): Promise<AmbassadorData> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/ambassador/me`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_AMBASSADOR;
+  }
+}
+
+export async function fetchTransparency(): Promise<TransparencyData> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/analytics/transparency`, { next: { revalidate: 60 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_TRANSPARENCY;
+  }
+}
+
+export async function fetchTransactions(): Promise<Transaction[]> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/transactions`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_TRANSACTIONS;
+  }
+}
+
+export async function fetchNotifications(): Promise<AppNotification[]> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/notifications`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_NOTIFICATIONS;
+  }
+}
+
+export async function markAllNotificationsRead(): Promise<{ success: boolean }> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/notifications/read-all`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return { success: true };
+  }
+}
+
+export async function fetchLeaderboard(
+  type: "artists" | "supporters" | "rising-stars"
+): Promise<LeaderboardArtist[] | LeaderboardSupporter[] | LeaderboardRisingStar[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/leaderboards/${type}`, { next: { revalidate: 60 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    if (type === "artists") {
+      return [
+        { rank: 1, name: "Nova Vex", genre: "Afrobeats", monthlyStreams: 284000, melodioScore: 94, pointsSold: 12, badge: "🔥" },
+        { rank: 2, name: "Melo Cipher", genre: "Hip-Hop", monthlyStreams: 210000, melodioScore: 89, pointsSold: 13, badge: "🚀" },
+        { rank: 3, name: "Lyra Bloom", genre: "Alt R&B", monthlyStreams: 142000, melodioScore: 87, pointsSold: 12, badge: "💎" },
+        { rank: 4, name: "Khai Dusk", genre: "Trap Soul", monthlyStreams: 98000, melodioScore: 82, pointsSold: 13, badge: "⚡" },
+        { rank: 5, name: "Zara Sol", genre: "Pop", monthlyStreams: 67000, melodioScore: 76, pointsSold: 10, badge: "🎯" },
+        { rank: 6, name: "Indie Haze", genre: "Indie Pop", monthlyStreams: 41000, melodioScore: 71, pointsSold: 10, badge: "🔥" },
+      ] as LeaderboardArtist[];
+    }
+    if (type === "supporters") {
+      return [
+        { rank: 1, username: "m***r", pointsOwned: 47, totalSpent: 4250, artistsSupported: 4, badge: "💎" },
+        { rank: 2, username: "b***x", pointsOwned: 38, totalSpent: 3800, artistsSupported: 6, badge: "🔥" },
+        { rank: 3, username: "s***k", pointsOwned: 31, totalSpent: 2900, artistsSupported: 3, badge: "🚀" },
+        { rank: 4, username: "t***o", pointsOwned: 25, totalSpent: 2100, artistsSupported: 5, badge: "🎯" },
+        { rank: 5, username: "j***n", pointsOwned: 22, totalSpent: 1650, artistsSupported: 4, badge: "⚡" },
+      ] as LeaderboardSupporter[];
+    }
+    return [
+      { rank: 1, name: "Indie Haze", genre: "Indie Pop", growthPct: 89, weeksOnPlatform: 6, badge: "🚀" },
+      { rank: 2, name: "Khai Dusk", genre: "Trap Soul", growthPct: 67, weeksOnPlatform: 12, badge: "⚡" },
+      { rank: 3, name: "Zara Sol", genre: "Pop", growthPct: 54, weeksOnPlatform: 18, badge: "🎯" },
+      { rank: 4, name: "Lyra Bloom", genre: "Alt R&B", growthPct: 41, weeksOnPlatform: 32, badge: "🔥" },
+      { rank: 5, name: "Nova Vex", genre: "Afrobeats", growthPct: 34, weeksOnPlatform: 38, badge: "💎" },
+    ] as LeaderboardRisingStar[];
+  }
+}

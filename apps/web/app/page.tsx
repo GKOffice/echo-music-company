@@ -81,6 +81,147 @@ const TICKER_EVENTS = [
   "🎛️ Beat Hub: 47 new beats scored this week",
 ];
 
+const TESTIMONIALS = [
+  {
+    quote: "Melodio changed everything. I dropped my first point batch and had fans earning royalties within a week. The AI handles every step — I just make music.",
+    name: "Nova Vex",
+    genre: "Afrobeats",
+    stat: "Earned $3,200 in first month",
+    initial: "N",
+  },
+  {
+    quote: "I used to lose 30% to middlemen. With Melodio, my fans own a piece of my catalog and I keep 90% of my publishing. This is how music should work.",
+    name: "Lyra Bloom",
+    genre: "Alt R&B",
+    stat: "Earned $1,800 in first month",
+    initial: "L",
+  },
+  {
+    quote: "The Melodio Score gave my fans confidence to buy points early. Went from 0 to 98K monthly listeners in 3 months — all with 21 AI agents working for me 24/7.",
+    name: "Khai Dusk",
+    genre: "Trap Soul",
+    stat: "Earned $2,400 in first month",
+    initial: "K",
+  },
+];
+
+const PRESS_LOGOS = ["Billboard", "Complex", "Pitchfork", "Rolling Stone", "Variety"];
+
+function SocialProofSection() {
+  const [current, setCurrent] = useState(0);
+  const [animating, setAnimating] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setAnimating(true);
+      setTimeout(() => {
+        setCurrent((c) => (c + 1) % TESTIMONIALS.length);
+        setAnimating(false);
+      }, 300);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const t = TESTIMONIALS[current];
+
+  return (
+    <section className="py-24 px-4 bg-[#13131a]">
+      <div className="max-w-5xl mx-auto">
+        {/* Section header */}
+        <div className="text-center mb-14">
+          <div className="inline-flex items-center gap-2 bg-[#10b981]/10 text-[#34d399] border border-[#10b981]/30 rounded-full px-4 py-2 text-sm mb-4">
+            Artist Stories
+          </div>
+          <h2 className="text-3xl md:text-4xl font-black text-[#f9fafb]">
+            Heard from the artists themselves
+          </h2>
+        </div>
+
+        {/* Testimonial carousel */}
+        <div className="relative overflow-hidden rounded-2xl border border-[#2a2a3a] bg-[#0a0a0f] p-8 md:p-12 mb-6 min-h-[220px] flex flex-col justify-between">
+          <div
+            className="transition-all duration-300"
+            style={{ opacity: animating ? 0 : 1, transform: animating ? "translateY(12px)" : "translateY(0)" }}
+          >
+            <p className="text-[#d1d5db] text-lg md:text-xl leading-relaxed mb-8 italic">
+              &ldquo;{t.quote}&rdquo;
+            </p>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm"
+                  style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #10b981 100%)" }}>
+                  {t.initial}
+                </div>
+                <div>
+                  <div className="text-[#f9fafb] font-semibold text-sm">{t.name}</div>
+                  <div className="text-[#6b7280] text-xs">{t.genre}</div>
+                </div>
+              </div>
+              <div className="bg-[#10b981]/10 border border-[#10b981]/30 rounded-full px-4 py-1.5 text-[#34d399] text-sm font-semibold">
+                {t.stat}
+              </div>
+            </div>
+          </div>
+
+          {/* Dots */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+            {TESTIMONIALS.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => { setAnimating(false); setCurrent(i); }}
+                className="transition-all duration-300"
+                aria-label={`Go to testimonial ${i + 1}`}
+              >
+                <span className={`block rounded-full transition-all duration-300 ${i === current ? "w-5 h-1.5 bg-[#8b5cf6]" : "w-1.5 h-1.5 bg-[#2a2a3a]"}`} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3-card preview row (desktop) */}
+        <div className="hidden md:grid grid-cols-3 gap-4 mb-16">
+          {TESTIMONIALS.map((testimonial, i) => (
+            <button
+              key={i}
+              onClick={() => { setAnimating(false); setCurrent(i); }}
+              className={`text-left p-5 rounded-xl border transition-all duration-200 ${
+                i === current
+                  ? "border-[#8b5cf6] bg-[#8b5cf6]/5"
+                  : "border-[#2a2a3a] bg-[#0a0a0f] hover:border-[#8b5cf6]/40"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-white text-xs"
+                  style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #10b981 100%)" }}>
+                  {testimonial.initial}
+                </div>
+                <span className="text-sm font-semibold text-[#f9fafb]">{testimonial.name}</span>
+              </div>
+              <p className="text-xs text-[#6b7280] line-clamp-2">{testimonial.quote.slice(0, 80)}…</p>
+              <p className="text-xs text-[#34d399] mt-2 font-medium">{testimonial.stat}</p>
+            </button>
+          ))}
+        </div>
+
+        {/* As Featured In */}
+        <div className="text-center">
+          <p className="text-xs font-semibold text-[#6b7280] uppercase tracking-widest mb-6">As Featured In</p>
+          <div className="flex items-center justify-center gap-4 flex-wrap">
+            {PRESS_LOGOS.map((name) => (
+              <div
+                key={name}
+                className="bg-[#1a1a24] border border-[#2a2a3a] rounded-lg px-5 py-2.5 text-[#9ca3af] text-sm font-semibold"
+              >
+                {name}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   const heroRef = useRef<HTMLDivElement>(null);
   const [tickerOffset, setTickerOffset] = useState(0);
@@ -280,6 +421,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Social Proof */}
+      <SocialProofSection />
 
       {/* ECHO Points CTA */}
       <section className="py-24 px-4 max-w-5xl mx-auto text-center">

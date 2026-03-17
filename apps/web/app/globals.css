@@ -4,21 +4,40 @@
 
 @layer base {
   :root {
-    --background: #0a0a0f;
-    --surface: #13131a;
-    --surface-2: #1a1a24;
-    --border: #2a2a38;
-    --primary: #8b5cf6;
-    --primary-hover: #7c3aed;
-    --accent: #10b981;
-    --text-primary: #f9fafb;
-    --text-secondary: #d1d5db;
-    --text-muted: #6b7280;
+    /* Dark mode (default) — RGB channel values for opacity modifier support */
+    --background: 10 10 15;
+    --surface: 19 19 26;
+    --surface-2: 26 26 36;
+    --border: 42 42 56;
+    --primary: 139 92 246;
+    --primary-hover: 124 58 237;
+    --primary-light: 167 139 250;
+    --accent: 16 185 129;
+    --accent-hover: 5 150 105;
+    --accent-light: 52 211 153;
+    --muted: 107 114 128;
+    --text-primary: 249 250 251;
+    --text-secondary: 209 213 219;
+    --text-muted: 107 114 128;
+    --danger: 239 68 68;
+    --warning: 245 158 11;
+    --info: 59 130 246;
+  }
+
+  [data-theme="light"] {
+    --background: 255 255 255;
+    --surface: 243 244 246;
+    --surface-2: 229 231 235;
+    --border: 209 213 219;
+    --text-primary: 17 24 39;
+    --text-secondary: 55 65 81;
+    --text-muted: 107 114 128;
+    /* primary, accent, danger, warning, info stay the same */
   }
 
   * {
     box-sizing: border-box;
-    border-color: var(--border);
+    border-color: rgb(var(--border));
   }
 
   html {
@@ -26,8 +45,8 @@
   }
 
   body {
-    background-color: var(--background);
-    color: var(--text-primary);
+    background-color: rgb(var(--background));
+    color: rgb(var(--text-primary));
     font-family: var(--font-inter), system-ui, sans-serif;
   }
 
@@ -42,11 +61,11 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: var(--surface);
+    background: rgb(var(--surface));
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: rgb(var(--border));
     border-radius: 3px;
   }
 
