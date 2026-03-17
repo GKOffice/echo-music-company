@@ -1,6 +1,6 @@
 """
 ECHO Agent Orchestrator
-Boots all 21 agents and manages the full autonomous operation.
+Boots all 23 agents and manages the full autonomous operation.
 """
 
 import asyncio
@@ -42,20 +42,21 @@ from agents.youtube import YouTubeAgent
 from agents.hub import HubAgent
 from agents.vault import VaultAgent
 from agents.deal_room import DealRoomAgent
+from agents.fan_intelligence import FanIntelligenceAgent
 
 ALL_AGENTS = [
     CEOAgent, ARAgent, ProductionAgent, DistributionAgent, MarketingAgent,
     SocialAgent, FinanceAgent, LegalAgent, AnalyticsAgent, CreativeAgent,
     SyncAgent, ArtistDevAgent, PRAgent, CommsAgent, QCAgent,
     InfrastructureAgent, IntakeAgent, MerchAgent, YouTubeAgent, HubAgent,
-    VaultAgent, DealRoomAgent,
+    VaultAgent, DealRoomAgent, FanIntelligenceAgent,
 ]
 
 
 async def main():
     logger.info("=" * 60)
     logger.info("  Melodio — AI Music Company")
-    logger.info("  Booting all 22 agents...")
+    logger.info("  Booting all 23 agents...")
     logger.info("=" * 60)
 
     await bus.connect()
