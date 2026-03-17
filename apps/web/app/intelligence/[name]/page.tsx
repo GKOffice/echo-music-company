@@ -172,8 +172,14 @@ export default function IntelligenceReportPage() {
         explanation: val.explanation || "",
         emoji: val.emoji || ({ collaboration_network: "🔗", platform_velocity: "🚀", genre_timing: "🎵", content_to_music_ratio: "📱", live_performance_trajectory: "🎤", sync_readiness: "🎬", fanbase_quality: "💎", release_cadence: "📅", cross_platform_correlation: "🔄", breakout_probability: "💥" }[key] || "📊"),
       }));
-  const rec = (report as any).sign_recommendation || { should_sign: false, confidence: 0, reasoning: "" };
+  const rawRec = (report as any).sign_recommendation || {};
+  const rec = {
+    should_sign: rawRec.should_sign === true || rawRec.decision === "yes" || rawRec.decision === "Yes",
+    confidence: rawRec.confidence ?? 0,
+    reasoning: typeof rawRec.reasoning === "string" ? rawRec.reasoning : JSON.stringify(rawRec.reasoning || ""),
+  };
   const aiSummary = (report as any).executive_summary || (report as any).ai_summary || "";
+  const discography = ((report as any).discography || []) as { title: string; date: string; status: string }[];
 
   return (
     <main className="min-h-screen bg-[#0a0a0f] pt-20 pb-16">
@@ -188,13 +194,18 @@ export default function IntelligenceReportPage() {
           </div>
           <div className="flex-1">
             <h1 className="text-3xl md:text-4xl font-black text-white">{report.artist_name}</h1>
-            {stats.spotify?.genres && stats.spotify.genres.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {stats.spotify.genres.slice(0, 5).map((g: string) => (
-                  <span key={g} className="bg-[#8b5cf6]/10 text-[#8b5cf6] text-xs px-3 py-1 rounded-full border border-[#8b5cf6]/20">{g}</span>
-                ))}
-              </div>
-            )}
+            {(() => {
+              const genres = (report as any).genres || stats.spotify?.genres || [];
+              const genreClass = (report as any).genre_classification;
+              const allGenres = genres.length > 0 ? genres : (genreClass ? genreClass.split(/[,\/]/).map((g: string) => g.trim()) : []);
+              return allGenres.length > 0 ? (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {allGenres.slice(0, 5).map((g: string) => (
+                    <span key={g} className="bg-[#8b5cf6]/10 text-[#8b5cf6] text-xs px-3 py-1 rounded-full border border-[#8b5cf6]/20">{g}</span>
+                  ))}
+                </div>
+              ) : null;
+            })()}
             <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-400">
               {((report as any).sources_used || []).map((s: any) => {
                 const label = typeof s === "string" ? s : s?.source || String(s);
@@ -411,6 +422,26 @@ export default function IntelligenceReportPage() {
                   <div className="text-white text-sm font-medium">{e.venue || "TBA"}</div>
                   <div className="text-gray-400 text-xs mt-1">{e.location || ""}</div>
                   <div className="text-[#8b5cf6] text-xs mt-1">{e.date || ""}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Discography ─────────────────────────────────────── */}
+        {discography.length > 0 && (
+          <section className="mb-6">
+            <h2 className="text-lg font-bold text-white mb-4">Discography</h2>
+            <div className="bg-[#13131a] border border-[#2a2a3a] rounded-xl overflow-hidden">
+              {discography.slice(0, 10).map((r, i) => (
+                <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-[#2a2a3a] last:border-0">
+                  <span className="text-gray-500 text-xs font-mono w-16 shrink-0">{r.date || "—"}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-sm font-medium truncate">{r.title}</div>
+                  </div>
+                  {r.status && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${r.status === "Official" ? "bg-[#10b981]/10 text-[#10b981]" : "bg-gray-700/50 text-gray-400"}`}>{r.status}</span>
+                  )}
                 </div>
               ))}
             </div>
