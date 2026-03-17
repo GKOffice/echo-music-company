@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from database import engine
 from routers import auth, artists, releases, points, agents, hub, finance, legal, analytics, distribution, deal_room, songwriters
 from routers.digital_merch import router as digital_merch_router
+from routers.payments import router as payments_router
 
 load_dotenv()
 
@@ -60,6 +61,7 @@ app.include_router(distribution.router, prefix="/api/v1/distribution", tags=["di
 app.include_router(deal_room.router, prefix="/api/v1/deal-room", tags=["deal-room"])
 app.include_router(songwriters.router, prefix="/api/v1/songwriters", tags=["songwriters"])
 app.include_router(digital_merch_router, prefix="/api/v1/digital-merch", tags=["digital-merch"])
+app.include_router(payments_router, prefix="/api/v1/payments", tags=["payments"])
 
 
 @app.get("/health", tags=["system"])

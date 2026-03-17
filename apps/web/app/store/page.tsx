@@ -1,12 +1,10 @@
-import Link from "next/link";
-import Navbar from "@/components/Navbar";
-import type { Metadata } from "next";
+// TODO: Wire Stripe.js — publishable key needed (pk_test_...)
+// Payment flow: create-intent → Stripe.js confirmPayment → /payments/confirm
+"use client";
 
-export const metadata: Metadata = {
-  title: "Artist Store — Digital Downloads, Stems & More",
-  description:
-    "Buy exclusive music, stems, sample packs, beat licenses, and digital art directly from artists on Melodio.",
-};
+import Link from "next/link";
+import { useState } from "react";
+import Navbar from "@/components/Navbar";
 
 const PRODUCT_TYPES = [
   { label: "All", value: "all" },
@@ -137,7 +135,49 @@ const HOW_IT_WORKS = [
   },
 ];
 
+interface Product {
+  id: string;
+  title: string;
+  artist: string;
+  product_type: string;
+  price: number;
+  cover: string;
+  preview: string;
+  featured?: boolean;
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function StorePage() {
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+
+  const handleTestPurchase = async (product: Product) => {
+    setTestLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/payments/create-intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount_cents: Math.round(product.price * 100),
+          currency: "usd",
+          product_type: "digital_merch",
+          product_id: product.id,
+          metadata: { product_title: product.title },
+        }),
+      });
+      const data = await res.json();
+      console.log("[Melodio] PaymentIntent client_secret:", data.client_secret);
+      console.log("[Melodio] PaymentIntent ID:", data.payment_intent_id);
+      alert(`Test intent created!\nPI: ${data.payment_intent_id}\nCheck console for client_secret.`);
+    } catch (err) {
+      console.error("[Melodio] create-intent error:", err);
+      alert("Error creating payment intent — check console.");
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-[#f9fafb]">
       <Navbar />
@@ -191,7 +231,7 @@ export default function StorePage() {
               <div
                 key={product.id}
                 className={`bg-[#13131a] border rounded-2xl overflow-hidden group hover:border-[#8b5cf6]/50 transition-all duration-300 ${
-                  (product as { featured?: boolean }).featured
+                  product.featured
                     ? "border-[#8b5cf6]/40 ring-1 ring-[#8b5cf6]/20"
                     : "border-[#2a2a3a]"
                 }`}
@@ -203,7 +243,7 @@ export default function StorePage() {
                     alt={product.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
-                  {(product as { featured?: boolean }).featured && (
+                  {product.featured && (
                     <div className="absolute top-3 left-3 bg-[#8b5cf6] text-white text-xs font-bold px-2 py-1 rounded-full">
                       Featured
                     </div>
@@ -233,7 +273,10 @@ export default function StorePage() {
                     <span className="text-[#f9fafb] font-black text-lg">
                       ${product.price.toFixed(2)}
                     </span>
-                    <button className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors">
+                    <button
+                      onClick={() => setSelectedProduct(product)}
+                      className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors"
+                    >
                       Buy Now
                     </button>
                   </div>
@@ -300,6 +343,83 @@ export default function StorePage() {
       <footer className="px-6 md:px-10 py-8 border-t border-[#2a2a3a] text-center text-[#4b5563] text-sm">
         <p>© 2026 Melodio — melodio.io</p>
       </footer>
+
+      {/* Purchase Modal */}
+      {selectedProduct && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+          onClick={(e) => e.target === e.currentTarget && setSelectedProduct(null)}
+        >
+          <div className="bg-[#13131a] border border-[#2a2a3a] rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold">Complete Purchase</h3>
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="text-[#6b7280] hover:text-[#f9fafb] text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Product summary */}
+            <div className="flex items-center gap-4 p-4 bg-[#0a0a0f] rounded-xl mb-5">
+              <img
+                src={selectedProduct.cover}
+                alt={selectedProduct.title}
+                className="w-16 h-16 rounded-lg object-cover shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="font-bold text-sm leading-snug truncate">{selectedProduct.title}</p>
+                <p className="text-[#8b5cf6] text-xs mt-0.5">{selectedProduct.artist}</p>
+                <p className="text-[#10b981] font-black text-lg mt-1">
+                  ${selectedProduct.price.toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {/* Pay with Card — disabled until Stripe.js is wired */}
+              <div className="relative group">
+                <button
+                  disabled
+                  className="w-full bg-[#8b5cf6]/30 text-[#8b5cf6]/60 font-semibold py-3 rounded-xl text-sm cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                  Pay with Card
+                </button>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-[#2a2a3a] text-[#9ca3af] text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  Enter card details — Stripe.js pending publishable key
+                </div>
+              </div>
+
+              {/* Test Purchase */}
+              <button
+                onClick={() => handleTestPurchase(selectedProduct)}
+                disabled={testLoading}
+                className="w-full bg-[#10b981] hover:bg-[#059669] disabled:bg-[#10b981]/40 text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+              >
+                {testLoading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Creating intent...
+                  </>
+                ) : (
+                  "Test Purchase (dev)"
+                )}
+              </button>
+            </div>
+
+            <p className="text-center text-[#4b5563] text-xs mt-4 flex items-center justify-center gap-1.5">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Secure payments powered by Stripe
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

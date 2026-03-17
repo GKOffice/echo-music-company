@@ -205,6 +205,29 @@ export default function DigitalStoreDashboard() {
             ))}
           </div>
 
+          {/* Stripe Connect Banner */}
+          <div className="mb-6 bg-[#13131a] border border-[#8b5cf6]/30 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-[#8b5cf6]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <svg className="w-5 h-5 text-[#8b5cf6]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-sm text-[#f9fafb]">Connect your Stripe account to receive payouts</p>
+                <p className="text-[#6b7280] text-xs mt-0.5">
+                  Melodio pays out on the 1st and 15th of each month via Stripe
+                </p>
+              </div>
+            </div>
+            <a
+              href="/api/v1/payments/stripe-connect"
+              className="shrink-0 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white font-semibold text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+            >
+              Connect Stripe Account
+            </a>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Products Table */}
             <div className="lg:col-span-2 bg-[#13131a] border border-[#2a2a3a] rounded-xl overflow-hidden">

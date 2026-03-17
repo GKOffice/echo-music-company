@@ -429,11 +429,17 @@ async def purchase_product(
         raise HTTPException(status_code=404, detail="Product not found")
     product = dict(product)
 
-    # Mock payment validation: accept any intent starting with "mock_" or None
     payment_intent = body.stripe_payment_intent_id or f"mock_{uuid.uuid4().hex}"
     if not payment_intent.startswith("mock_"):
-        # In production, verify Stripe payment here
-        pass
+        import stripe
+        import os
+        stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+        try:
+            pi = stripe.PaymentIntent.retrieve(payment_intent)
+        except stripe.error.StripeError as e:
+            raise HTTPException(status_code=402, detail=str(e.user_message))
+        if pi.status != "succeeded":
+            raise HTTPException(status_code=402, detail="Payment not confirmed")
 
     amount_paid = float(product["price"])
     melodio_fee = round(amount_paid * MELODIO_FEE_PCT / 100, 2)
