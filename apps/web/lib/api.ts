@@ -58,6 +58,37 @@ export interface AgentStatus {
   lastActivity: string;
 }
 
+export interface DashboardArtist {
+  id: string;
+  name: string;
+  monthly_listeners: number;
+  total_streams: number;
+  revenue_mtd: number;
+  melodio_score: number;
+  tier: string;
+  points_sold: number;
+  points_total: number;
+  price_per_point: number;
+  total_raised: number;
+  paid_to_holders: number;
+  next_payout: string;
+}
+
+export interface ActivityItem {
+  id: string;
+  icon: string;
+  text: string;
+  time: string;
+  accent: string;
+}
+
+export interface PlatformStats {
+  artists: number;
+  fans: number;
+  paid_to_artists: number;
+  sync_placements: number;
+}
+
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
 const MOCK_ARTISTS: Artist[] = [
@@ -181,6 +212,31 @@ const MOCK_AGENT_STATUSES: AgentStatus[] = [
   { id: "marketing", name: "Marketing Agent", status: "busy", lastActivity: "1 min ago" },
 ];
 
+const MOCK_DASHBOARD_ARTIST: DashboardArtist = {
+  id: "1",
+  name: "Nova Vex",
+  monthly_listeners: 284000,
+  total_streams: 4200000,
+  revenue_mtd: 8412,
+  melodio_score: 94,
+  tier: "Diamond",
+  points_sold: 12,
+  points_total: 15,
+  price_per_point: 250,
+  total_raised: 3000,
+  paid_to_holders: 4960,
+  next_payout: "Apr 1, 2026",
+};
+
+const MOCK_ACTIVITY: ActivityItem[] = [
+  { id: "1", icon: "📀", text: "Midnight Drive added to 3 editorial playlists", time: "2h ago", accent: "#8b5cf6" },
+  { id: "2", icon: "💰", text: "2 Melodio Points sold · $500 earned", time: "5h ago", accent: "#10b981" },
+  { id: "3", icon: "🏆", text: "Milestone: 1M streams on Midnight Drive", time: "1d ago", accent: "#f59e0b" },
+  { id: "4", icon: "📈", text: "Monthly listeners up 12% — Melodio Score raised to 94", time: "2d ago", accent: "#8b5cf6" },
+  { id: "5", icon: "💰", text: "Royalty payout: $4,960 distributed to 12 holders", time: "3d ago", accent: "#10b981" },
+  { id: "6", icon: "🎤", text: "Distribution Agent deployed Neon Fever to 47 DSPs", time: "1w ago", accent: "#9ca3af" },
+];
+
 // ─── API Functions ────────────────────────────────────────────────────────────
 
 export async function fetchArtists(): Promise<Artist[]> {
@@ -300,4 +356,219 @@ export function tierBadge(tier: Artist["tier"]): string {
   if (tier === "diamond") return "💎";
   if (tier === "fire") return "🔥";
   return "⭐";
+}
+
+// ─── Additional Interfaces ─────────────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: "artist" | "fan" | "producer" | "songwriter";
+}
+
+export interface Listing {
+  id: string;
+  listing_type: string;
+  listing_mode: string;
+  title: string;
+  creator_type: string;
+  creator_name: string;
+  genre: string;
+  asking_price?: number | null;
+  accept_points: boolean;
+  accept_cash: boolean;
+  monthly_streams?: number | null;
+  total_streams?: number | null;
+  estimated_revenue?: number | null;
+  verified_listing: boolean;
+  auction_ends_in_hours?: number;
+  highest_bid?: number;
+  bid_count?: number;
+}
+
+export interface MerchItem {
+  id: string;
+  title: string;
+  artist: string;
+  type: "download" | "stems" | "sample_pack" | "beat_license" | "exclusive" | "preset" | "bundle";
+  price: number;
+  description: string;
+  artwork?: string;
+}
+
+export interface Songwriter {
+  id: string;
+  name: string;
+  genre: string;
+  songs_registered: number;
+  monthly_earnings: number;
+  bio?: string;
+}
+
+// ─── Auth API Functions ────────────────────────────────────────────────────────
+
+export async function apiLogin(
+  email: string,
+  password: string
+): Promise<{ token: string; user: User }> {
+  const res = await fetch(`${API_URL}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) throw new Error("Login failed");
+  return res.json();
+}
+
+export async function apiSignup(
+  name: string,
+  email: string,
+  password: string
+): Promise<{ token: string; user: User }> {
+  const res = await fetch(`${API_URL}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password }),
+  });
+  if (!res.ok) throw new Error("Signup failed");
+  return res.json();
+}
+
+export async function apiMe(token: string): Promise<User | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ─── Payment API Functions ─────────────────────────────────────────────────────
+
+export async function createCheckoutSession(
+  dropId: string,
+  quantity: number
+): Promise<{ url: string }> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/payments/create-checkout-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ drop_id: dropId, quantity }),
+    });
+    if (!res.ok) throw new Error("Payment error");
+    return res.json();
+  } catch {
+    return { url: "" };
+  }
+}
+
+// ─── Notification Preferences ──────────────────────────────────────────────────
+
+export async function updateNotificationPrefs(
+  prefs: Record<string, boolean>
+): Promise<{ success: boolean }> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/auth/notification-preferences`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(prefs),
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return { success: true }; // optimistic
+  }
+}
+
+// ─── Additional Data Fetches ───────────────────────────────────────────────────
+
+export async function fetchDealRoom(): Promise<Listing[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/deal-room`, { next: { revalidate: 30 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchDigitalMerch(): Promise<MerchItem[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/digital-merch`, { next: { revalidate: 60 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSongwriters(): Promise<Songwriter[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/songwriters`, { next: { revalidate: 60 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchMyArtist(): Promise<DashboardArtist> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/artists/me`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_DASHBOARD_ARTIST;
+  }
+}
+
+export async function fetchMyReleases(): Promise<Release[]> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/releases?mine=true`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_RELEASES;
+  }
+}
+
+export async function fetchMyActivity(): Promise<ActivityItem[]> {
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    const res = await fetch(`${API_URL}/api/v1/artists/me/activity`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return MOCK_ACTIVITY;
+  }
+}
+
+export async function fetchPlatformStats(): Promise<PlatformStats | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/analytics/platform-stats`, { next: { revalidate: 300 } });
+    if (!res.ok) throw new Error("API error");
+    return res.json();
+  } catch {
+    return null;
+  }
 }

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import Providers from "./providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -14,8 +15,8 @@ export const metadata: Metadata = {
     template: "%s | Melodio",
   },
   description:
-    "Melodio is an autonomous AI music company. Discover, invest, and earn royalties from the music you believe in.",
-  keywords: ["music", "royalties", "AI", "streaming", "investment", "artists"],
+    "Melodio is an autonomous AI music company. Discover, own, and earn royalties from the music you believe in.",
+  keywords: ["music", "royalties", "AI", "streaming", "ownership", "artists"],
   authors: [{ name: "Melodio" }],
   openGraph: {
     title: "Melodio — Own the Sound",
@@ -37,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="bg-background text-text-primary antialiased min-h-screen">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

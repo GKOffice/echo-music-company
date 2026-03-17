@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import Navbar from "../components/Navbar";
+import { fetchPlatformStats, formatNumber } from "../lib/api";
 
-const platformStats = [
+const FALLBACK_STATS = [
   { label: "Artists", value: "5,247" },
   { label: "Fans", value: "89,400" },
   { label: "Paid to Artists", value: "$2.4M" },
@@ -82,6 +84,20 @@ const TICKER_EVENTS = [
 export default function HomePage() {
   const heroRef = useRef<HTMLDivElement>(null);
   const [tickerOffset, setTickerOffset] = useState(0);
+
+  const { data: apiStats } = useQuery({
+    queryKey: ["platform-stats"],
+    queryFn: fetchPlatformStats,
+  });
+
+  const platformStats = apiStats
+    ? [
+        { label: "Artists", value: formatNumber(apiStats.artists) },
+        { label: "Fans", value: formatNumber(apiStats.fans) },
+        { label: "Paid to Artists", value: `$${(apiStats.paid_to_artists / 1_000_000).toFixed(1)}M` },
+        { label: "Sync Placements", value: String(apiStats.sync_placements) },
+      ]
+    : FALLBACK_STATS;
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

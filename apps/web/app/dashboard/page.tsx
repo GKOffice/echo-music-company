@@ -1,59 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import Navbar from "../../components/Navbar";
-import { formatNumber, formatCurrency } from "../../lib/api";
-
-const stats = [
-  { label: "Monthly Listeners", value: "284K", change: "+12%", up: true },
-  { label: "Total Streams", value: "4.2M", change: "+8%", up: true },
-  { label: "Revenue MTD", value: "$8,412", change: "+23%", up: true },
-  {
-    label: "Melodio Score",
-    value: "94",
-    change: "💎 Diamond",
-    tier: true,
-  },
-];
-
-const releases = [
-  {
-    id: "r1",
-    title: "Midnight Drive",
-    status: "live",
-    streams: 1240000,
-    revenue: 4960,
-    pointsSold: 12,
-    releaseDate: "Feb 14, 2026",
-  },
-  {
-    id: "r2",
-    title: "Neon Fever",
-    status: "live",
-    streams: 860000,
-    revenue: 3440,
-    pointsSold: 8,
-    releaseDate: "Jan 20, 2026",
-  },
-  {
-    id: "r3",
-    title: "Dark Matter EP",
-    status: "processing",
-    streams: 0,
-    revenue: 0,
-    pointsSold: 0,
-    releaseDate: "Mar 22, 2026",
-  },
-];
-
-const activity = [
-  { icon: "📀", text: "Midnight Drive added to 3 editorial playlists", time: "2h ago", accent: "#8b5cf6" },
-  { icon: "💰", text: "2 Melodio Points sold · $500 earned", time: "5h ago", accent: "#10b981" },
-  { icon: "🏆", text: "Milestone: 1M streams on Midnight Drive", time: "1d ago", accent: "#f59e0b" },
-  { icon: "📈", text: "Monthly listeners up 12% — Melodio Score raised to 94", time: "2d ago", accent: "#8b5cf6" },
-  { icon: "💰", text: "Royalty payout: $4,960 distributed to 12 holders", time: "3d ago", accent: "#10b981" },
-  { icon: "🎤", text: "Distribution Agent deployed Neon Fever to 47 DSPs", time: "1w ago", accent: "#9ca3af" },
-];
+import { Skeleton } from "../../components/Skeleton";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  fetchMyArtist,
+  fetchMyReleases,
+  fetchMyActivity,
+  formatNumber,
+  formatCurrency,
+} from "../../lib/api";
 
 const quickActions = [
   { label: "Upload Song", icon: "⬆️", href: "/dashboard/upload", color: "#8b5cf6" },
@@ -63,12 +21,42 @@ const quickActions = [
 ];
 
 function statusBadge(status: string) {
-  if (status === "live") return { label: "Live", bg: "#10b981/20", text: "#34d399" };
-  if (status === "processing") return { label: "Processing", bg: "#f59e0b/20", text: "#fbbf24" };
-  return { label: "Draft", bg: "#2a2a3a", text: "#9ca3af" };
+  if (status === "live") return { label: "Live", text: "#34d399" };
+  if (status === "processing") return { label: "Processing", text: "#fbbf24" };
+  return { label: "Draft", text: "#9ca3af" };
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+
+  const { data: artist, isLoading: artistLoading } = useQuery({
+    queryKey: ["my-artist"],
+    queryFn: fetchMyArtist,
+  });
+
+  const { data: releases = [], isLoading: releasesLoading } = useQuery({
+    queryKey: ["my-releases"],
+    queryFn: fetchMyReleases,
+  });
+
+  const { data: activity = [], isLoading: activityLoading } = useQuery({
+    queryKey: ["my-activity"],
+    queryFn: fetchMyActivity,
+  });
+
+  const stats = artist
+    ? [
+        { label: "Monthly Listeners", value: formatNumber(artist.monthly_listeners), change: "+12%", up: true },
+        { label: "Total Streams", value: formatNumber(artist.total_streams), change: "+8%", up: true },
+        { label: "Revenue MTD", value: formatCurrency(artist.revenue_mtd), change: "+23%", up: true },
+        { label: "Melodio Score", value: String(artist.melodio_score), change: `💎 ${artist.tier}`, tier: true },
+      ]
+    : null;
+
+  const pointsSoldPct = artist
+    ? Math.round((artist.points_sold / artist.points_total) * 100)
+    : 0;
+
   return (
     <main className="min-h-screen bg-[#0a0a0f]">
       <Navbar />
@@ -78,7 +66,12 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between mb-10 flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-black text-[#f9fafb]">Artist Dashboard</h1>
-            <p className="text-[#9ca3af] mt-1">Welcome back, Nova Vex</p>
+            <p className="text-[#9ca3af] mt-1">
+              Welcome back,{" "}
+              {artistLoading
+                ? <span className="inline-block w-24 h-4 bg-[#1a1a24] rounded animate-pulse align-middle" />
+                : user?.name ?? artist?.name ?? "Artist"}
+            </p>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <span className="w-2 h-2 bg-[#10b981] rounded-full animate-pulse" />
@@ -88,21 +81,29 @@ export default function DashboardPage() {
 
         {/* Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {stats.map((s) => (
-            <div key={s.label} className="bg-[#13131a] rounded-xl border border-[#2a2a3a] p-5 hover:border-[#8b5cf6] transition-colors">
-              <div className="text-[#9ca3af] text-sm mb-2">{s.label}</div>
-              <div className="text-white font-bold text-2xl mb-1">{s.value}</div>
-              {s.tier ? (
-                <span className="inline-flex items-center px-2 py-0.5 bg-[#8b5cf6]/20 text-[#a78bfa] text-xs rounded-full">
-                  {s.change}
-                </span>
-              ) : (
-                <div className={`text-sm font-medium ${s.up ? "text-[#10b981]" : "text-[#ef4444]"}`}>
-                  {s.change} this month
+          {artistLoading || !stats
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-[#13131a] rounded-xl border border-[#2a2a3a] p-5">
+                  <Skeleton className="h-4 w-3/4 mb-3" />
+                  <Skeleton className="h-8 w-1/2 mb-2" />
+                  <Skeleton className="h-4 w-1/3" />
                 </div>
-              )}
-            </div>
-          ))}
+              ))
+            : stats.map((s) => (
+                <div key={s.label} className="bg-[#13131a] rounded-xl border border-[#2a2a3a] p-5 hover:border-[#8b5cf6] transition-colors">
+                  <div className="text-[#9ca3af] text-sm mb-2">{s.label}</div>
+                  <div className="text-white font-bold text-2xl mb-1">{s.value}</div>
+                  {s.tier ? (
+                    <span className="inline-flex items-center px-2 py-0.5 bg-[#8b5cf6]/20 text-[#a78bfa] text-xs rounded-full">
+                      {s.change}
+                    </span>
+                  ) : (
+                    <div className={`text-sm font-medium ${s.up ? "text-[#10b981]" : "text-[#ef4444]"}`}>
+                      {s.change} this month
+                    </div>
+                  )}
+                </div>
+              ))}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -115,46 +116,56 @@ export default function DashboardPage() {
                 <h2 className="text-lg font-bold text-[#f9fafb]">My Releases</h2>
                 <Link href="/dashboard/upload" className="text-sm text-[#8b5cf6] hover:underline">+ Upload New</Link>
               </div>
-              <div className="space-y-3">
-                {releases.map((r) => {
-                  const badge = statusBadge(r.status);
-                  return (
-                    <div key={r.id} className="flex items-center gap-4 p-4 bg-[#0a0a0f] rounded-lg border border-[#2a2a3a] hover:border-[#8b5cf6] transition-colors group cursor-pointer">
-                      {/* Artwork placeholder */}
-                      <div className="w-12 h-12 bg-[#2a2a3a] rounded-lg shrink-0 flex items-center justify-center text-xl">
-                        🎵
-                      </div>
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-[#f9fafb] truncate">{r.title}</span>
-                          <span
-                            className="text-xs px-2 py-0.5 rounded-full shrink-0"
-                            style={{ background: `${badge.text}20`, color: badge.text }}
-                          >
-                            {badge.label}
-                          </span>
+              <div className="overflow-x-auto -mx-2 px-2">
+                <div className="space-y-3 min-w-[320px]">
+                  {releasesLoading
+                    ? Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-4 p-4 bg-[#0a0a0f] rounded-lg border border-[#2a2a3a]">
+                          <Skeleton className="w-12 h-12 rounded-lg shrink-0" />
+                          <div className="flex-1 space-y-2">
+                            <Skeleton className="h-4 w-1/2" />
+                            <Skeleton className="h-3 w-1/3" />
+                          </div>
+                          <Skeleton className="h-8 w-20 shrink-0 hidden sm:block" />
                         </div>
-                        <div className="text-xs text-[#9ca3af]">{r.releaseDate}</div>
-                      </div>
-                      {/* Stats */}
-                      <div className="hidden sm:grid grid-cols-3 gap-6 text-right shrink-0">
-                        <div>
-                          <div className="text-sm font-semibold text-[#f9fafb]">{r.streams > 0 ? formatNumber(r.streams) : "—"}</div>
-                          <div className="text-xs text-[#9ca3af]">Streams</div>
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-[#f9fafb]">{r.revenue > 0 ? formatCurrency(r.revenue) : "—"}</div>
-                          <div className="text-xs text-[#9ca3af]">Revenue</div>
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-[#f9fafb]">{r.pointsSold > 0 ? r.pointsSold : "—"}</div>
-                          <div className="text-xs text-[#9ca3af]">Pts Sold</div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      ))
+                    : releases.map((r) => {
+                        const badge = statusBadge(r.status);
+                        return (
+                          <div key={r.id} className="flex items-center gap-4 p-4 bg-[#0a0a0f] rounded-lg border border-[#2a2a3a] hover:border-[#8b5cf6] transition-colors cursor-pointer">
+                            <div className="w-12 h-12 bg-[#2a2a3a] rounded-lg shrink-0 flex items-center justify-center text-xl">
+                              🎵
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-semibold text-[#f9fafb] truncate">{r.title}</span>
+                                <span
+                                  className="text-xs px-2 py-0.5 rounded-full shrink-0"
+                                  style={{ background: `${badge.text}20`, color: badge.text }}
+                                >
+                                  {badge.label}
+                                </span>
+                              </div>
+                              <div className="text-xs text-[#9ca3af]">{r.releaseDate}</div>
+                            </div>
+                            <div className="hidden sm:grid grid-cols-3 gap-6 text-right shrink-0">
+                              <div>
+                                <div className="text-sm font-semibold text-[#f9fafb]">{r.streams > 0 ? formatNumber(r.streams) : "—"}</div>
+                                <div className="text-xs text-[#9ca3af]">Streams</div>
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-[#f9fafb]">{r.revenue > 0 ? formatCurrency(r.revenue) : "—"}</div>
+                                <div className="text-xs text-[#9ca3af]">Revenue</div>
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-[#f9fafb]">{r.pointsSold > 0 ? r.pointsSold : "—"}</div>
+                                <div className="text-xs text-[#9ca3af]">Pts Sold</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                </div>
               </div>
             </section>
 
@@ -162,20 +173,30 @@ export default function DashboardPage() {
             <section className="bg-[#13131a] rounded-xl border border-[#2a2a3a] p-6">
               <h2 className="text-lg font-bold text-[#f9fafb] mb-5">Recent Activity</h2>
               <div className="space-y-4">
-                {activity.map((a, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
-                      style={{ background: `${a.accent}20` }}
-                    >
-                      {a.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-[#e8e8f0]">{a.text}</div>
-                    </div>
-                    <div className="text-xs text-[#9ca3af] shrink-0">{a.time}</div>
-                  </div>
-                ))}
+                {activityLoading
+                  ? Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="flex items-start gap-3">
+                        <Skeleton className="w-8 h-8 rounded-lg shrink-0" />
+                        <div className="flex-1 space-y-1">
+                          <Skeleton className="h-4 w-3/4" />
+                        </div>
+                        <Skeleton className="h-4 w-12 shrink-0" />
+                      </div>
+                    ))
+                  : activity.map((a, i) => (
+                      <div key={a.id ?? i} className="flex items-start gap-3">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
+                          style={{ background: `${a.accent}20` }}
+                        >
+                          {a.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-[#e8e8f0]">{a.text}</div>
+                        </div>
+                        <div className="text-xs text-[#9ca3af] shrink-0">{a.time}</div>
+                      </div>
+                    ))}
               </div>
             </section>
           </div>
@@ -183,36 +204,50 @@ export default function DashboardPage() {
           {/* Right column — Points + Quick Actions */}
           <div className="space-y-6">
 
-            {/* ECHO Points */}
+            {/* Melodio Points */}
             <section className="bg-[#13131a] rounded-xl border border-[#2a2a3a] p-6">
               <h2 className="text-lg font-bold text-[#f9fafb] mb-5">Melodio Points</h2>
 
-              {/* Progress */}
-              <div className="mb-5">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-[#9ca3af]">Points Sold</span>
-                  <span className="font-semibold text-[#f9fafb]">12 / 15</span>
+              {artistLoading || !artist ? (
+                <div className="space-y-3 mb-5">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-2 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-4 w-full mt-3" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
                 </div>
-                <div className="w-full h-2 bg-[#2a2a3a] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#8b5cf6] rounded-full" style={{ width: "80%" }} />
-                </div>
-                <div className="text-xs text-[#9ca3af] mt-2">3 points remaining · $250/pt</div>
-              </div>
+              ) : (
+                <>
+                  <div className="mb-5">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-[#9ca3af]">Points Sold</span>
+                      <span className="font-semibold text-[#f9fafb]">{artist.points_sold} / {artist.points_total}</span>
+                    </div>
+                    <div className="w-full h-2 bg-[#2a2a3a] rounded-full overflow-hidden">
+                      <div className="h-full bg-[#8b5cf6] rounded-full" style={{ width: `${pointsSoldPct}%` }} />
+                    </div>
+                    <div className="text-xs text-[#9ca3af] mt-2">
+                      {artist.points_total - artist.points_sold} remaining · ${artist.price_per_point}/pt
+                    </div>
+                  </div>
 
-              <div className="space-y-3 mb-5">
-                <div className="flex justify-between items-center py-2 border-b border-[#2a2a3a]">
-                  <span className="text-sm text-[#9ca3af]">Total Raised</span>
-                  <span className="font-semibold text-[#f9fafb]">$3,000</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-[#2a2a3a]">
-                  <span className="text-sm text-[#9ca3af]">Paid to Holders</span>
-                  <span className="font-semibold text-[#10b981]">$4,960</span>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-sm text-[#9ca3af]">Next Payout</span>
-                  <span className="font-semibold text-[#f9fafb]">Apr 1, 2026</span>
-                </div>
-              </div>
+                  <div className="space-y-3 mb-5">
+                    <div className="flex justify-between items-center py-2 border-b border-[#2a2a3a]">
+                      <span className="text-sm text-[#9ca3af]">Total Raised</span>
+                      <span className="font-semibold text-[#f9fafb]">{formatCurrency(artist.total_raised)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b border-[#2a2a3a]">
+                      <span className="text-sm text-[#9ca3af]">Paid to Holders</span>
+                      <span className="font-semibold text-[#10b981]">{formatCurrency(artist.paid_to_holders)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2">
+                      <span className="text-sm text-[#9ca3af]">Next Payout</span>
+                      <span className="font-semibold text-[#f9fafb]">{artist.next_payout}</span>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <Link
                 href="/points"
@@ -230,7 +265,7 @@ export default function DashboardPage() {
                   <Link
                     key={action.label}
                     href={action.href}
-                    className="flex flex-col items-center justify-center gap-2 p-4 bg-[#0a0a0f] rounded-xl border border-[#2a2a3a] hover:border-[#8b5cf6] transition-colors group cursor-pointer"
+                    className="flex flex-col items-center justify-center gap-2 p-4 bg-[#0a0a0f] rounded-xl border border-[#2a2a3a] hover:border-[#8b5cf6] transition-colors group"
                   >
                     <span className="text-2xl">{action.icon}</span>
                     <span className="text-xs font-medium text-[#9ca3af] group-hover:text-[#f9fafb] transition-colors text-center">
