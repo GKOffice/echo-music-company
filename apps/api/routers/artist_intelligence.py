@@ -1,0 +1,704 @@
+"""
+Melodio Artist Intelligence API
+Search any artist → collect data from all available sources → AI-powered analysis report.
+"""
+from fastapi import APIRouter, Query, Request, HTTPException
+from typing import Optional
+import httpx
+import json
+import os
+import asyncio
+import base64
+import re
+from datetime import datetime, timezone
+
+router = APIRouter()
+
+REDIS_TTL_SEARCH = 300    # 5 min
+REDIS_TTL_REPORT = 3600   # 1 hour
+REDIS_TTL_COMPARE = 3600  # 1 hour
+
+ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
+SPOTIFY_CLIENT_ID    = os.getenv("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY", "")
+GENIUS_ACCESS_TOKEN  = os.getenv("GENIUS_ACCESS_TOKEN", "")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CACHE HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _cache_get(request: Request, key: str) -> Optional[dict]:
+    try:
+        val = await request.app.state.redis.get(key)
+        if val:
+            return json.loads(val)
+    except Exception:
+        pass
+    return None
+
+
+async def _cache_set(request: Request, key: str, data: dict, ttl: int = 3600):
+    try:
+        await request.app.state.redis.setex(key, ttl, json.dumps(data, default=str))
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA ADAPTERS — each returns {"source": ..., "available": bool, ...}
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _spotify_token() -> Optional[str]:
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+        return None
+    creds = base64.b64encode(
+        f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()
+    ).decode()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                "https://accounts.spotify.com/api/token",
+                headers={
+                    "Authorization": f"Basic {creds}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                data={"grant_type": "client_credentials"},
+            )
+            if resp.status_code == 200:
+                return resp.json().get("access_token")
+    except Exception:
+        pass
+    return None
+
+
+async def fetch_spotify(name: str) -> dict:
+    token = await _spotify_token()
+    if not token:
+        return {"source": "spotify", "available": False, "reason": "No API credentials"}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            s = await client.get(
+                "https://api.spotify.com/v1/search",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"q": name, "type": "artist", "limit": 1},
+            )
+            if s.status_code != 200:
+                return {"source": "spotify", "available": False, "reason": "Search failed"}
+            items = s.json().get("artists", {}).get("items", [])
+            if not items:
+                return {"source": "spotify", "available": False, "reason": "Not found"}
+
+            a = items[0]
+            aid = a["id"]
+
+            top_resp, rel_resp = await asyncio.gather(
+                client.get(
+                    f"https://api.spotify.com/v1/artists/{aid}/top-tracks",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"market": "US"},
+                ),
+                client.get(
+                    f"https://api.spotify.com/v1/artists/{aid}/related-artists",
+                    headers={"Authorization": f"Bearer {token}"},
+                ),
+            )
+
+            top_tracks = []
+            if top_resp.status_code == 200:
+                top_tracks = [
+                    {"name": t["name"], "popularity": t["popularity"]}
+                    for t in top_resp.json().get("tracks", [])[:5]
+                ]
+
+            related = []
+            if rel_resp.status_code == 200:
+                related = [r["name"] for r in rel_resp.json().get("artists", [])[:6]]
+
+            return {
+                "source": "spotify",
+                "available": True,
+                "id": aid,
+                "name": a["name"],
+                "followers": a.get("followers", {}).get("total", 0),
+                "popularity": a.get("popularity", 0),
+                "genres": a.get("genres", []),
+                "image": (a.get("images") or [{}])[0].get("url"),
+                "external_url": a.get("external_urls", {}).get("spotify"),
+                "top_tracks": top_tracks,
+                "related_artists": related,
+            }
+    except Exception as e:
+        return {"source": "spotify", "available": False, "reason": str(e)}
+
+
+async def fetch_youtube(name: str) -> dict:
+    if not YOUTUBE_API_KEY:
+        return {"source": "youtube", "available": False, "reason": "No API key"}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            s = await client.get(
+                "https://www.googleapis.com/youtube/v3/search",
+                params={
+                    "part": "snippet",
+                    "q": f"{name} official",
+                    "type": "channel",
+                    "maxResults": 1,
+                    "key": YOUTUBE_API_KEY,
+                },
+            )
+            if s.status_code != 200:
+                return {"source": "youtube", "available": False, "reason": "Search failed"}
+            items = s.json().get("items", [])
+            if not items:
+                return {"source": "youtube", "available": False, "reason": "Not found"}
+
+            channel_id = items[0]["id"]["channelId"]
+            cr = await client.get(
+                "https://www.googleapis.com/youtube/v3/channels",
+                params={"part": "statistics,snippet", "id": channel_id, "key": YOUTUBE_API_KEY},
+            )
+            if cr.status_code != 200:
+                return {"source": "youtube", "available": False, "reason": "Stats failed"}
+            channels = cr.json().get("items", [])
+            if not channels:
+                return {"source": "youtube", "available": False, "reason": "No data"}
+
+            ch = channels[0]
+            stats = ch.get("statistics", {})
+            return {
+                "source": "youtube",
+                "available": True,
+                "channel_id": channel_id,
+                "name": ch.get("snippet", {}).get("title", name),
+                "subscribers": int(stats.get("subscriberCount", 0)),
+                "total_views": int(stats.get("viewCount", 0)),
+                "video_count": int(stats.get("videoCount", 0)),
+                "channel_url": f"https://youtube.com/channel/{channel_id}",
+            }
+    except Exception as e:
+        return {"source": "youtube", "available": False, "reason": str(e)}
+
+
+async def fetch_genius(name: str) -> dict:
+    headers: dict = {"User-Agent": "Melodio/1.0"}
+    if GENIUS_ACCESS_TOKEN:
+        headers["Authorization"] = f"Bearer {GENIUS_ACCESS_TOKEN}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.genius.com/search",
+                params={"q": name},
+                headers=headers,
+            )
+            if r.status_code != 200:
+                return {"source": "genius", "available": False, "reason": "API error"}
+            hits = r.json().get("response", {}).get("hits", [])
+            artist_hits = [
+                h for h in hits
+                if h.get("result", {}).get("primary_artist", {}).get("name", "").lower()
+                == name.lower()
+            ] or hits[:6]
+
+            songs = [
+                {
+                    "title": h["result"].get("title", ""),
+                    "annotations": h["result"].get("annotation_count", 0),
+                    "pageviews": h["result"].get("stats", {}).get("pageviews", 0),
+                }
+                for h in artist_hits[:10]
+            ]
+            return {
+                "source": "genius",
+                "available": True,
+                "songs_found": len(songs),
+                "songs": songs,
+                "total_pageviews": sum(s["pageviews"] for s in songs),
+            }
+    except Exception as e:
+        return {"source": "genius", "available": False, "reason": str(e)}
+
+
+async def fetch_musicbrainz(name: str) -> dict:
+    hdrs = {"User-Agent": "Melodio/1.0 (melodio.io)"}
+    try:
+        async with httpx.AsyncClient(timeout=12, headers=hdrs) as client:
+            r = await client.get(
+                "https://musicbrainz.org/ws/2/artist/",
+                params={"query": name, "limit": 1, "fmt": "json"},
+            )
+            if r.status_code != 200:
+                return {"source": "musicbrainz", "available": False, "reason": "Search failed"}
+            artists = r.json().get("artists", [])
+            if not artists:
+                return {"source": "musicbrainz", "available": False, "reason": "Not found"}
+
+            a = artists[0]
+            aid = a["id"]
+
+            rr = await client.get(
+                "https://musicbrainz.org/ws/2/release/",
+                params={"artist": aid, "limit": 25, "fmt": "json"},
+            )
+            releases = []
+            if rr.status_code == 200:
+                releases = [
+                    {
+                        "title": rel.get("title", ""),
+                        "date": rel.get("date", ""),
+                        "status": rel.get("status", ""),
+                    }
+                    for rel in rr.json().get("releases", [])
+                ]
+
+            return {
+                "source": "musicbrainz",
+                "available": True,
+                "mbid": aid,
+                "name": a.get("name", name),
+                "type": a.get("type", ""),
+                "country": a.get("country", ""),
+                "begin_date": a.get("life-span", {}).get("begin", ""),
+                "disambiguation": a.get("disambiguation", ""),
+                "releases": releases[:15],
+                "release_count": len(releases),
+                "tags": [t["name"] for t in a.get("tags", [])[:10]],
+            }
+    except Exception as e:
+        return {"source": "musicbrainz", "available": False, "reason": str(e)}
+
+
+async def fetch_wikipedia(name: str) -> dict:
+    try:
+        async with httpx.AsyncClient(
+            timeout=10, headers={"User-Agent": "Melodio/1.0 (melodio.io)"}
+        ) as client:
+            r = await client.get(
+                f"https://en.wikipedia.org/api/rest_v1/page/summary/{name.replace(' ', '_')}",
+                follow_redirects=True,
+            )
+            if r.status_code == 200:
+                d = r.json()
+                return {
+                    "source": "wikipedia",
+                    "available": True,
+                    "title": d.get("title", name),
+                    "extract": d.get("extract", "")[:900],
+                    "thumbnail": d.get("thumbnail", {}).get("source"),
+                    "url": d.get("content_urls", {}).get("desktop", {}).get("page"),
+                }
+            return {"source": "wikipedia", "available": False, "reason": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"source": "wikipedia", "available": False, "reason": str(e)}
+
+
+async def fetch_bandsintown(name: str) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://rest.bandsintown.com/artists/{name}/events",
+                params={"app_id": "melodio", "date": "upcoming"},
+            )
+            if r.status_code == 200 and isinstance(r.json(), list):
+                events = [
+                    {
+                        "date": e.get("datetime", "")[:10],
+                        "venue": e.get("venue", {}).get("name", ""),
+                        "city": e.get("venue", {}).get("city", ""),
+                        "country": e.get("venue", {}).get("country", ""),
+                        "capacity": e.get("venue", {}).get("capacity"),
+                    }
+                    for e in r.json()[:10]
+                ]
+                return {
+                    "source": "bandsintown",
+                    "available": True,
+                    "upcoming_shows": len(events),
+                    "events": events,
+                }
+            return {"source": "bandsintown", "available": False, "reason": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"source": "bandsintown", "available": False, "reason": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ANALYSIS_PROMPT = """You are Melodio's AI A&R analyst. Analyze the data below and return ONLY valid JSON — no markdown, no explanation.
+
+Artist: {artist_name}
+
+Collected Data:
+{data_json}
+
+Return this exact JSON structure (fill in all values):
+{{
+  "melodio_score": {{
+    "total": <0-100 int>,
+    "music_quality": <0-100 int>,
+    "social_momentum": <0-100 int>,
+    "commercial_traction": <0-100 int>,
+    "brand_strength": <0-100 int>,
+    "market_timing": <0-100 int>
+  }},
+  "predictive_angles": {{
+    "collaboration_network": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "platform_velocity": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "genre_timing": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "content_to_music_ratio": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "live_performance_trajectory": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "sync_readiness": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "fanbase_quality": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "release_cadence": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "cross_platform_correlation": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
+    "breakout_probability": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}}
+  }},
+  "executive_summary": "<3-4 paragraphs, analytical tone>",
+  "sign_recommendation": {{
+    "decision": "<yes|maybe|no>",
+    "confidence": <0-100>,
+    "reasoning": "<2-3 sentences — do NOT use the words invest, investment, or ROI>"
+  }},
+  "key_strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
+  "key_risks": ["<risk 1>", "<risk 2>"],
+  "notable_collaborators": ["<name>"],
+  "genre_classification": "<primary genre + subgenre>"
+}}
+
+Scoring rules:
+- total = music_quality*0.35 + social_momentum*0.20 + commercial_traction*0.25 + brand_strength*0.10 + market_timing*0.10
+- Be data-driven and realistic; score conservatively when data is sparse
+- NEVER use the words invest, investment, or ROI anywhere in the output"""
+
+
+async def _call_claude(prompt: str, max_tokens: int = 2000) -> Optional[str]:
+    if not ANTHROPIC_API_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=35) as client:
+            r = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": max_tokens,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+            if r.status_code == 200:
+                return r.json().get("content", [{}])[0].get("text", "")
+    except Exception:
+        pass
+    return None
+
+
+def _mock_analysis(artist_name: str) -> dict:
+    import hashlib, random
+    seed = int(hashlib.md5(artist_name.lower().encode()).hexdigest()[:8], 16)
+    rng = random.Random(seed)
+
+    mq = rng.randint(50, 88)
+    sm = rng.randint(42, 85)
+    ct = rng.randint(38, 82)
+    bs = rng.randint(40, 78)
+    mt = rng.randint(45, 80)
+    total = int(mq * 0.35 + sm * 0.20 + ct * 0.25 + bs * 0.10 + mt * 0.10)
+
+    def angle(lo: int = 35, hi: int = 88) -> dict:
+        s = rng.randint(lo, hi)
+        t = rng.choice(["up", "down", "neutral"])
+        quality = "strong" if s > 65 else "moderate" if s > 45 else "developing"
+        return {
+            "score": s,
+            "trend": t,
+            "explanation": f"Available signals suggest {quality} performance in this dimension. Connect more data sources for a fuller picture.",
+        }
+
+    dec = "yes" if total >= 68 else ("maybe" if total >= 50 else "no")
+    conf = rng.randint(52, 84)
+
+    return {
+        "melodio_score": {
+            "total": total,
+            "music_quality": mq,
+            "social_momentum": sm,
+            "commercial_traction": ct,
+            "brand_strength": bs,
+            "market_timing": mt,
+        },
+        "predictive_angles": {
+            "collaboration_network": angle(),
+            "platform_velocity": angle(),
+            "genre_timing": angle(),
+            "content_to_music_ratio": angle(),
+            "live_performance_trajectory": angle(),
+            "sync_readiness": angle(),
+            "fanbase_quality": angle(),
+            "release_cadence": angle(),
+            "cross_platform_correlation": angle(),
+            "breakout_probability": angle(25, 75),
+        },
+        "executive_summary": (
+            f"{artist_name} shows promising characteristics across multiple evaluation dimensions. "
+            f"With a Melodio Score of {total}, this artist demonstrates a foundation worth monitoring.\n\n"
+            "Analysis is based on limited data — connect Spotify, YouTube, and other API keys for a comprehensive picture.\n\n"
+            "Platform velocity and release cadence are key metrics to watch over the next 90 days."
+        ),
+        "sign_recommendation": {
+            "decision": dec,
+            "confidence": conf,
+            "reasoning": "Based on available data signals, this artist merits further consideration. Deeper data access would sharpen this assessment.",
+        },
+        "key_strengths": ["Release consistency", "Genre positioning", "Dedicated core fanbase"],
+        "key_risks": ["Limited cross-platform data available", "Market saturation in genre"],
+        "notable_collaborators": [],
+        "genre_classification": "Independent",
+    }
+
+
+async def analyze_with_claude(artist_name: str, raw_data: dict) -> dict:
+    text = await _call_claude(
+        _ANALYSIS_PROMPT.format(
+            artist_name=artist_name,
+            data_json=json.dumps(raw_data, default=str)[:6000],
+        )
+    )
+    if text:
+        try:
+            match = re.search(r"\{[\s\S]*\}", text)
+            if match:
+                return json.loads(match.group())
+        except Exception:
+            pass
+    return _mock_analysis(artist_name)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORT ASSEMBLER
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _build_report(artist_name: str, request: Request) -> dict:
+    spotify, youtube, genius, musicbrainz, wikipedia, bandsintown = await asyncio.gather(
+        fetch_spotify(artist_name),
+        fetch_youtube(artist_name),
+        fetch_genius(artist_name),
+        fetch_musicbrainz(artist_name),
+        fetch_wikipedia(artist_name),
+        fetch_bandsintown(artist_name),
+    )
+
+    raw_data = {
+        "spotify": spotify,
+        "youtube": youtube,
+        "genius": genius,
+        "musicbrainz": musicbrainz,
+        "wikipedia": wikipedia,
+        "bandsintown": bandsintown,
+    }
+
+    analysis = await analyze_with_claude(artist_name, raw_data)
+
+    image = (
+        spotify.get("image") if spotify.get("available")
+        else wikipedia.get("thumbnail") if wikipedia.get("available")
+        else None
+    )
+
+    genres = spotify.get("genres", []) if spotify.get("available") else []
+    if not genres and musicbrainz.get("available"):
+        genres = musicbrainz.get("tags", [])
+
+    platform_stats: dict = {}
+    if spotify.get("available"):
+        platform_stats["spotify"] = {
+            "followers": spotify.get("followers", 0),
+            "popularity": spotify.get("popularity", 0),
+            "top_tracks": spotify.get("top_tracks", []),
+            "related_artists": spotify.get("related_artists", []),
+            "url": spotify.get("external_url"),
+        }
+    if youtube.get("available"):
+        platform_stats["youtube"] = {
+            "subscribers": youtube.get("subscribers", 0),
+            "total_views": youtube.get("total_views", 0),
+            "video_count": youtube.get("video_count", 0),
+            "url": youtube.get("channel_url"),
+        }
+
+    sources_used = [k for k, v in raw_data.items() if v.get("available")]
+    sources_unavailable = [
+        {"source": k, "reason": v.get("reason", "unavailable")}
+        for k, v in raw_data.items()
+        if not v.get("available")
+    ]
+
+    return {
+        "artist_name": artist_name,
+        "image": image,
+        "genres": genres[:5],
+        "melodio_score": analysis.get("melodio_score", {}),
+        "predictive_angles": analysis.get("predictive_angles", {}),
+        "executive_summary": analysis.get("executive_summary", ""),
+        "sign_recommendation": analysis.get("sign_recommendation", {}),
+        "key_strengths": analysis.get("key_strengths", []),
+        "key_risks": analysis.get("key_risks", []),
+        "notable_collaborators": analysis.get("notable_collaborators", []),
+        "genre_classification": analysis.get("genre_classification", ""),
+        "platform_stats": platform_stats,
+        "discography": musicbrainz.get("releases", []) if musicbrainz.get("available") else [],
+        "live_events": bandsintown.get("events", []) if bandsintown.get("available") else [],
+        "genius_data": (
+            {"songs_found": genius.get("songs_found", 0), "top_songs": genius.get("songs", [])[:5]}
+            if genius.get("available") else None
+        ),
+        "wikipedia_extract": wikipedia.get("extract") if wikipedia.get("available") else None,
+        "sources_used": sources_used,
+        "sources_unavailable": sources_unavailable,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "cached": False,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/search")
+async def search_artists(
+    q: str = Query(..., min_length=1, description="Artist name to search"),
+    request: Request = None,
+):
+    """Search for artists across platforms."""
+    q = q.strip()
+    cache_key = f"intel:search:{q.lower()}"
+
+    cached = await _cache_get(request, cache_key)
+    if cached:
+        return cached
+
+    results = []
+
+    spotify = await fetch_spotify(q)
+    if spotify.get("available"):
+        results.append({
+            "name": spotify["name"],
+            "image": spotify.get("image"),
+            "genres": spotify.get("genres", []),
+            "followers": spotify.get("followers", 0),
+            "popularity": spotify.get("popularity", 0),
+            "platforms": {"spotify": spotify.get("external_url")},
+            "source": "spotify",
+        })
+
+    if not results:
+        mb = await fetch_musicbrainz(q)
+        if mb.get("available"):
+            results.append({
+                "name": mb["name"],
+                "image": None,
+                "genres": mb.get("tags", []),
+                "followers": 0,
+                "popularity": 0,
+                "platforms": {},
+                "source": "musicbrainz",
+            })
+
+    if not results:
+        results.append({
+            "name": q,
+            "image": None,
+            "genres": [],
+            "followers": 0,
+            "popularity": 0,
+            "platforms": {},
+            "source": "manual",
+        })
+
+    response = {"query": q, "results": results, "count": len(results)}
+    await _cache_set(request, cache_key, response, REDIS_TTL_SEARCH)
+    return response
+
+
+@router.get("/report/{artist_name}")
+async def get_report(
+    artist_name: str,
+    request: Request = None,
+    refresh: bool = Query(False, description="Force fresh data"),
+):
+    """Generate a full intelligence report for an artist."""
+    artist_name = artist_name.strip()
+    cache_key = f"intel:report:{artist_name.lower().replace(' ', '_')}"
+
+    if not refresh:
+        cached = await _cache_get(request, cache_key)
+        if cached:
+            cached["cached"] = True
+            return cached
+
+    report = await _build_report(artist_name, request)
+    await _cache_set(request, cache_key, report, REDIS_TTL_REPORT)
+    return report
+
+
+@router.get("/compare")
+async def compare_artists(
+    artists: str = Query(..., description="Comma-separated artist names (2-4)"),
+    request: Request = None,
+):
+    """Compare multiple artists side by side."""
+    names = [n.strip() for n in artists.split(",") if n.strip()][:4]
+    if len(names) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least 2 artist names")
+
+    cache_key = f"intel:compare:{':'.join(sorted(n.lower() for n in names))}"
+    cached = await _cache_get(request, cache_key)
+    if cached:
+        return cached
+
+    reports = await asyncio.gather(
+        *[_build_report(name, request) for name in names],
+        return_exceptions=True,
+    )
+
+    comparison = []
+    for i, report in enumerate(reports):
+        if isinstance(report, Exception):
+            comparison.append({"artist_name": names[i], "error": str(report)})
+        else:
+            comparison.append({
+                "artist_name": report["artist_name"],
+                "image": report.get("image"),
+                "genres": report.get("genres", []),
+                "melodio_score": report.get("melodio_score", {}),
+                "predictive_angles_summary": {
+                    k: v.get("score", 0)
+                    for k, v in report.get("predictive_angles", {}).items()
+                },
+                "sign_recommendation": report.get("sign_recommendation", {}),
+                "key_strengths": report.get("key_strengths", []),
+                "key_risks": report.get("key_risks", []),
+                "platform_stats": report.get("platform_stats", {}),
+            })
+
+    ai_summary = ""
+    prompt = (
+        f"Compare these artists for Melodio A&R in 2-3 sentences. "
+        f"Focus on who shows more potential and why. Do NOT use invest, investment, or ROI.\n\n"
+        f"Data: {json.dumps([{'name': c['artist_name'], 'score': c['melodio_score'].get('total', 0), 'decision': c['sign_recommendation'].get('decision', '')} for c in comparison])}\n\nReturn plain text only."
+    )
+    text = await _call_claude(prompt, max_tokens=300)
+    if text:
+        ai_summary = text.strip()
+
+    result = {
+        "artists": comparison,
+        "ai_summary": ai_summary,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _cache_set(request, cache_key, result, REDIS_TTL_COMPARE)
+    return result

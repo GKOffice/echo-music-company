@@ -990,3 +990,77 @@ export async function fetchLeaderboard(
     ] as LeaderboardRisingStar[];
   }
 }
+
+// ─── Artist Intelligence ────────────────────────────────────────────────
+
+export interface IntelligenceSearchResult {
+  name: string;
+  image: string;
+  genres: string[];
+  followers: number;
+  spotify_id?: string;
+}
+
+export interface PredictiveAngle {
+  name: string;
+  score: number;
+  trend: "up" | "down" | "stable";
+  explanation: string;
+  emoji: string;
+}
+
+export interface IntelligenceReport {
+  artist_name: string;
+  generated_at: string;
+  melodio_score: number;
+  score_breakdown: {
+    music_quality: number;
+    social_momentum: number;
+    commercial_traction: number;
+    brand_strength: number;
+    market_timing: number;
+  };
+  predictive_angles: PredictiveAngle[];
+  platform_stats: {
+    spotify?: { followers: number; monthly_listeners: number; popularity: number; top_tracks: any[]; genres: string[] };
+    youtube?: { subscribers: number; total_views: number; recent_videos: any[] };
+    genius?: { song_count: number; pageviews: number; top_songs: any[] };
+    musicbrainz?: { release_count: number; first_release: string; labels: string[]; collaborators: string[] };
+    bandsintown?: { upcoming_events: number; past_events: number; events: any[] };
+    wikipedia?: { summary: string; url: string };
+  };
+  ai_summary: string;
+  sign_recommendation: { should_sign: boolean; confidence: number; reasoning: string };
+  sources_used: string[];
+  sources_failed: string[];
+}
+
+export async function searchArtistIntelligence(q: string): Promise<{ results: IntelligenceSearchResult[] }> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/intelligence/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return { results: [] };
+    return await res.json();
+  } catch {
+    return { results: [] };
+  }
+}
+
+export async function getIntelligenceReport(name: string): Promise<IntelligenceReport | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/intelligence/report/${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function compareArtists(names: string[]): Promise<any> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/intelligence/compare?artists=${names.map(encodeURIComponent).join(",")}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}

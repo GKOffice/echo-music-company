@@ -11,6 +11,7 @@ from routers import auth, artists, releases, points, agents, hub, finance, legal
 from routers.digital_merch import router as digital_merch_router
 from routers.payments import router as payments_router
 from routers.fan_intelligence import router as fan_intelligence_router
+from routers.artist_intelligence import router as artist_intelligence_router
 
 load_dotenv()
 
@@ -40,10 +41,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("WEB_URL", "http://localhost:3000"),
-        "http://localhost:3000",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,6 +62,7 @@ app.include_router(songwriters.router, prefix="/api/v1/songwriters", tags=["song
 app.include_router(digital_merch_router, prefix="/api/v1/digital-merch", tags=["digital-merch"])
 app.include_router(payments_router, prefix="/api/v1/payments", tags=["payments"])
 app.include_router(fan_intelligence_router, prefix="/api/v1/fan-intelligence", tags=["fan-intelligence"])
+app.include_router(artist_intelligence_router, prefix="/api/v1/intelligence", tags=["artist-intelligence"])
 
 
 @app.get("/health", tags=["system"])

@@ -16,6 +16,7 @@ const navLinks = [
   { label: "Deal Room", href: "/dealroom" },
   { label: "For Artists", href: "/submit" },
   { label: "Songwriters", href: "/songwriters" },
+  { label: "Intelligence", href: "/intelligence" },
   { label: "How It Works", href: "/how-it-works" },
 ];
 
