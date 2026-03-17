@@ -23,6 +23,36 @@ PRICING = {
     "bundle":   (60.0, 100.0),
 }
 
+DIGITAL_PRODUCTS = {
+    "track_download":  (0.99, 4.99),
+    "stems":           (9.99, 49.99),
+    "sample_pack":     (14.99, 79.99),
+    "beat_license":    (19.99, 299.99),
+    "exclusive_audio": (4.99, 49.99),
+    "digital_art":     (2.99, 99.99),
+    "video":           (4.99, 29.99),
+    "lyric_sheet":     (0.99, 2.99),
+    "chord_chart":     (0.99, 2.99),
+    "preset_pack":     (9.99, 39.99),
+    "bundle":          (19.99, 149.99),
+}
+
+MELODIO_FEE_PCT = 0.15  # 15% platform fee on digital merch
+
+# Strategy → recommended product types
+STRATEGY_PRODUCTS = {
+    "launch": ["track_download", "stems", "lyric_sheet", "chord_chart", "bundle"],
+    "catalog": ["track_download", "stems", "sample_pack"],
+    "exclusive": ["exclusive_audio", "stems", "preset_pack", "digital_art", "bundle"],
+}
+
+# Estimated units sold for revenue projection by strategy
+STRATEGY_UNITS_ESTIMATE = {
+    "launch": 80,
+    "catalog": 30,
+    "exclusive": 20,
+}
+
 # Margin targets by model
 MARGIN_TARGETS = {
     "pod":      (0.40, 0.50),   # Print-on-demand
@@ -59,6 +89,10 @@ class MerchAgent(BaseAgent):
             "track_inventory": self._track_inventory,
             "generate_design_brief": self._generate_design_brief,
             "calculate_margins": self._calculate_margins,
+            # Digital merchandise
+            "plan_digital_drop": self._plan_digital_drop,
+            "create_digital_product": self._create_digital_product,
+            "digital_merch_report": self._digital_merch_report,
             # Legacy
             "design_brief": self._generate_design_brief,
             "launch_store": self._launch_store,
@@ -405,6 +439,185 @@ class MerchAgent(BaseAgent):
             "total_inventory": int(stats.get("total_inventory") or 0) if stats else 0,
             "total_sales_usd": 0.0,
             "units_sold": 0,
+        }
+
+    # ----------------------------------------------------------------
+    # plan_digital_drop
+    # ----------------------------------------------------------------
+
+    async def _plan_digital_drop(self, task: AgentTask) -> dict:
+        p = task.payload
+        artist_id = p.get("artist_id") or task.artist_id
+        release_id = p.get("release_id") or task.release_id
+        requested_types = p.get("products", [])
+        strategy = p.get("strategy", "launch")
+
+        product_types = requested_types or STRATEGY_PRODUCTS.get(strategy, STRATEGY_PRODUCTS["launch"])
+        units_estimate = STRATEGY_UNITS_ESTIMATE.get(strategy, 30)
+
+        lineup = []
+        total_revenue_projection = 0.0
+
+        for ptype in product_types:
+            price_range = DIGITAL_PRODUCTS.get(ptype, (9.99, 29.99))
+            suggested_price = round((price_range[0] + price_range[1]) / 2, 2)
+            artist_cut = round(suggested_price * (1 - MELODIO_FEE_PCT), 2)
+            projection = round(units_estimate * artist_cut, 2)
+            total_revenue_projection += projection
+
+            content_briefs = {
+                "track_download": "High-quality MP3 + WAV master download. Include album art in ZIP.",
+                "stems": "Separated stems: vocals, drums, bass, instruments. WAV 24-bit/48kHz.",
+                "sample_pack": "Curated loops, one-shots, and textures from the recording sessions. WAV/AIFF.",
+                "beat_license": "Non-exclusive license for commercial use. Include license PDF.",
+                "exclusive_audio": "Unreleased or alternate version content. Premium packaging.",
+                "digital_art": "High-res artwork, cover variants, or exclusive visual content. PNG/PDF.",
+                "video": "Music video, behind-the-scenes, or live performance footage. MP4 1080p+.",
+                "lyric_sheet": "Formatted lyric sheet with chord annotations. PDF.",
+                "chord_chart": "Guitar/piano chord chart with notation. PDF.",
+                "preset_pack": "DAW presets/patches used on the track. Organized by instrument.",
+                "bundle": "Combined package of 3+ digital products at discount. ZIP archive.",
+            }
+
+            lineup.append({
+                "product_type": ptype,
+                "suggested_price": suggested_price,
+                "price_range": price_range,
+                "artist_cut_per_unit": artist_cut,
+                "melodio_fee_per_unit": round(suggested_price * MELODIO_FEE_PCT, 2),
+                "units_estimate": units_estimate,
+                "revenue_projection": projection,
+                "content_brief": content_briefs.get(ptype, "Digital content for fans."),
+            })
+
+        strategy_notes = {
+            "launch": "Pair digital merch with physical drop for release day — bundle discounts drive volume.",
+            "catalog": "List existing tracks as downloads + stems to monetize back catalog.",
+            "exclusive": "Premium bundles and limited edition content — price at premium, cap units if desired.",
+        }
+
+        return {
+            "artist_id": artist_id,
+            "release_id": release_id,
+            "strategy": strategy,
+            "strategy_note": strategy_notes.get(strategy, ""),
+            "product_lineup": lineup,
+            "total_revenue_projection": round(total_revenue_projection, 2),
+            "melodio_fee_projection": round(total_revenue_projection * MELODIO_FEE_PCT / (1 - MELODIO_FEE_PCT), 2),
+            "units_estimate": units_estimate,
+        }
+
+    # ----------------------------------------------------------------
+    # create_digital_product
+    # ----------------------------------------------------------------
+
+    async def _create_digital_product(self, task: AgentTask) -> dict:
+        p = task.payload
+        artist_id = p.get("artist_id") or task.artist_id
+        release_id = p.get("release_id") or task.release_id
+        product_type = p.get("product_type", "track_download")
+        title = p.get("title") or f"Digital — {product_type.replace('_', ' ').title()}"
+        description = p.get("description")
+        price_range = DIGITAL_PRODUCTS.get(product_type, (9.99, 29.99))
+        price = float(p.get("price") or price_range[0])
+        license_type = p.get("license_type", "personal")
+        tags = p.get("tags", [product_type, "digital"])
+
+        product_id = str(uuid.uuid4())
+        storage_path = f"s3://melodio-assets/artists/{artist_id}/digital/{product_id}/"
+        license_key = f"MLO-{product_type[:3].upper()}-{uuid.uuid4().hex[:8].upper()}"
+
+        await self.db_execute(
+            """
+            INSERT INTO digital_products
+              (id, artist_id, title, description, product_type, price,
+               license_type, tags, release_id)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9)
+            """,
+            product_id,
+            artist_id,
+            title,
+            description,
+            product_type,
+            price,
+            license_type,
+            tags,
+            release_id,
+        )
+
+        await self.log_audit("digital_product_created", "digital_products", product_id, {
+            "artist_id": artist_id,
+            "product_type": product_type,
+            "price": price,
+        })
+
+        return {
+            "product_id": product_id,
+            "artist_id": artist_id,
+            "title": title,
+            "product_type": product_type,
+            "price": price,
+            "license_key": license_key,
+            "storage_path": storage_path,
+            "status": "created",
+        }
+
+    # ----------------------------------------------------------------
+    # digital_merch_report
+    # ----------------------------------------------------------------
+
+    async def _digital_merch_report(self, task: AgentTask) -> dict:
+        artist_id = task.payload.get("artist_id") or task.artist_id
+
+        if artist_id:
+            rows = await self.db_fetch(
+                """
+                SELECT p.product_type,
+                       COUNT(dp.id) AS units_sold,
+                       COALESCE(SUM(dp.amount_paid), 0) AS gross_revenue,
+                       COALESCE(SUM(dp.artist_payout), 0) AS net_revenue,
+                       COALESCE(SUM(dp.melodio_fee), 0) AS melodio_fees,
+                       COALESCE(AVG(dp.amount_paid), 0) AS avg_order_value
+                FROM digital_purchases dp
+                JOIN digital_products p ON p.id = dp.product_id
+                WHERE dp.artist_id = $1::uuid AND dp.status = 'completed'
+                GROUP BY p.product_type
+                ORDER BY gross_revenue DESC
+                """,
+                artist_id,
+            )
+        else:
+            rows = await self.db_fetch(
+                """
+                SELECT p.product_type,
+                       COUNT(dp.id) AS units_sold,
+                       COALESCE(SUM(dp.amount_paid), 0) AS gross_revenue,
+                       COALESCE(SUM(dp.artist_payout), 0) AS net_revenue,
+                       COALESCE(SUM(dp.melodio_fee), 0) AS melodio_fees,
+                       COALESCE(AVG(dp.amount_paid), 0) AS avg_order_value
+                FROM digital_purchases dp
+                JOIN digital_products p ON p.id = dp.product_id
+                WHERE dp.status = 'completed'
+                GROUP BY p.product_type
+                ORDER BY gross_revenue DESC
+                LIMIT 20
+                """
+            )
+
+        total_revenue = sum(float(r.get("gross_revenue") or 0) for r in rows)
+        total_units = sum(int(r.get("units_sold") or 0) for r in rows)
+        total_fees = sum(float(r.get("melodio_fees") or 0) for r in rows)
+        avg_order = round(total_revenue / total_units, 2) if total_units > 0 else 0.0
+        top_products = rows[:3] if rows else []
+
+        return {
+            "artist_id": artist_id,
+            "total_revenue": total_revenue,
+            "total_units_sold": total_units,
+            "melodio_fees_paid": total_fees,
+            "avg_order_value": avg_order,
+            "by_product_type": rows,
+            "top_products": top_products,
         }
 
     async def on_start(self):

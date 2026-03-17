@@ -459,3 +459,71 @@ CREATE TRIGGER trg_contracts_updated_at BEFORE UPDATE ON contracts
 
 CREATE TRIGGER trg_contacts_updated_at BEFORE UPDATE ON contacts
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- Digital Merchandise
+-- ============================================================
+
+CREATE TABLE digital_products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    artist_id UUID NOT NULL REFERENCES artists(id),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    product_type VARCHAR(50) NOT NULL CHECK (product_type IN ('track_download','stems','sample_pack','beat_license','exclusive_audio','digital_art','video','lyric_sheet','chord_chart','preset_pack','bundle')),
+    price DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'USD',
+    file_url TEXT,
+    preview_url TEXT,
+    cover_art_url TEXT,
+    file_size_mb DECIMAL(8,2),
+    file_format VARCHAR(50),
+    license_type VARCHAR(50) DEFAULT 'personal' CHECK (license_type IN ('personal','commercial','exclusive')),
+    download_limit INTEGER DEFAULT NULL,
+    is_active BOOLEAN DEFAULT true,
+    is_featured BOOLEAN DEFAULT false,
+    units_sold INTEGER DEFAULT 0,
+    total_revenue DECIMAL(12,2) DEFAULT 0,
+    melodio_fee_pct DECIMAL(5,2) DEFAULT 15.00,
+    tags TEXT[],
+    release_id UUID REFERENCES releases(id),
+    track_id UUID REFERENCES tracks(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE digital_purchases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    product_id UUID NOT NULL REFERENCES digital_products(id),
+    buyer_user_id UUID NOT NULL REFERENCES users(id),
+    artist_id UUID NOT NULL REFERENCES artists(id),
+    amount_paid DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'USD',
+    melodio_fee DECIMAL(10,2) NOT NULL,
+    artist_payout DECIMAL(10,2) NOT NULL,
+    stripe_payment_intent_id VARCHAR(255),
+    download_token UUID DEFAULT gen_random_uuid(),
+    download_count INTEGER DEFAULT 0,
+    max_downloads INTEGER DEFAULT 5,
+    license_key VARCHAR(100),
+    status VARCHAR(50) DEFAULT 'completed' CHECK (status IN ('pending','completed','refunded','disputed')),
+    expires_at TIMESTAMPTZ,
+    purchased_at TIMESTAMPTZ DEFAULT NOW(),
+    last_downloaded_at TIMESTAMPTZ
+);
+
+CREATE TABLE digital_bundle_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bundle_id UUID NOT NULL REFERENCES digital_products(id),
+    item_id UUID NOT NULL REFERENCES digital_products(id),
+    UNIQUE(bundle_id, item_id)
+);
+
+CREATE INDEX idx_digital_products_artist ON digital_products(artist_id);
+CREATE INDEX idx_digital_products_type ON digital_products(product_type);
+CREATE INDEX idx_digital_products_active ON digital_products(is_active);
+CREATE INDEX idx_digital_purchases_product ON digital_purchases(product_id);
+CREATE INDEX idx_digital_purchases_buyer ON digital_purchases(buyer_user_id);
+CREATE INDEX idx_digital_purchases_token ON digital_purchases(download_token);
+
+CREATE TRIGGER trg_digital_products_updated_at BEFORE UPDATE ON digital_products
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
