@@ -89,6 +89,8 @@ class MerchAgent(BaseAgent):
             "track_inventory": self._track_inventory,
             "generate_design_brief": self._generate_design_brief,
             "calculate_margins": self._calculate_margins,
+            # Hero skills
+            "drop_optimize": self._task_drop_optimize,
             # Digital merchandise
             "plan_digital_drop": self._plan_digital_drop,
             "create_digital_product": self._create_digital_product,
@@ -439,6 +441,98 @@ class MerchAgent(BaseAgent):
             "total_inventory": int(stats.get("total_inventory") or 0) if stats else 0,
             "total_sales_usd": 0.0,
             "units_sold": 0,
+        }
+
+    # ----------------------------------------------------------------
+    # Hero skills
+    # ----------------------------------------------------------------
+
+    async def _task_drop_optimize(self, task: AgentTask) -> dict:
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        drop_type = task.payload.get("drop_type", "stems")
+        price = float(task.payload.get("price") or 0.0)
+
+        artist = await self.db_fetchrow(
+            "SELECT name, genre, echo_score FROM artists WHERE id = $1::uuid", artist_id
+        ) if artist_id else None
+        artist_name = (artist.get("name") if artist else None) or "Artist"
+        artist_score = int(artist.get("echo_score") or 50) if artist else 50
+
+        fan_stats = await self.db_fetchrow(
+            "SELECT COUNT(*) AS fan_count FROM echo_points WHERE artist_id = $1::uuid", artist_id
+        ) if artist_id else None
+        fan_count = int(fan_stats.get("fan_count") or 0) if fan_stats else 0
+
+        # Optimal price ranges by drop type
+        drop_pricing = {
+            "stems": (29.99, 49.99),
+            "samples": (14.99, 29.99),
+            "presets": (19.99, 39.99),
+            "exclusive_track": (4.99, 14.99),
+            "visual_pack": (9.99, 24.99),
+        }
+        price_range = drop_pricing.get(drop_type, (14.99, 29.99))
+
+        if price <= 0:
+            score_factor = artist_score / 100
+            optimized_price = round(price_range[0] + (price_range[1] - price_range[0]) * score_factor, 2)
+        else:
+            optimized_price = round(max(price_range[0], min(price, price_range[1] * 1.5)), 2)
+
+        # Demand prediction
+        combined = fan_count * 0.3 + artist_score * 0.7
+        if combined >= 70:
+            demand = "high"
+            units_estimate = 100
+        elif combined >= 40:
+            demand = "medium"
+            units_estimate = 40
+        else:
+            demand = "low"
+            units_estimate = 15
+
+        # Bundle strategy
+        points_bonus = int(optimized_price * 10)
+        bundle_strategy = (
+            f"Standalone: {drop_type} at ${optimized_price:.2f}. "
+            f"Bundle with Echo Points: include {points_bonus} bonus echo_points at same price — drives loyalty. "
+            f"Super-fan bundle: {drop_type} + exclusive_track at ${optimized_price * 1.4:.2f} (40% premium)."
+        )
+
+        # Product description by drop type
+        descriptions = {
+            "stems": f"Professionally isolated stems from {artist_name}'s latest session — vocals, drums, bass, instruments. 24-bit WAV, 48kHz.",
+            "samples": f"Curated sample pack inspired by {artist_name}'s signature sound. Loops, one-shots, and textures. Royalty-free.",
+            "presets": f"The exact presets and patches {artist_name} uses in their productions. Compatible with major DAWs.",
+            "exclusive_track": f"An unreleased track from {artist_name} — available exclusively to direct supporters. WAV master quality.",
+            "visual_pack": f"High-resolution visual assets and artwork from {artist_name}'s latest release. For remixers and content creators.",
+        }
+        product_description = descriptions.get(drop_type, f"Exclusive {drop_type} from {artist_name}.")
+
+        # Drop timing recommendation
+        timing = {
+            "stems": "2–4 weeks post-release when streams plateau — extends the revenue cycle.",
+            "samples": "Standalone drop — pair with producer-focused content (BTS studio footage).",
+            "presets": "Pair with a production tutorial or live session announcement.",
+            "exclusive_track": "Release on birthday, album anniversary, or fan milestone for maximum impact.",
+            "visual_pack": "Launch day of release or alongside a remix contest for maximum visibility.",
+        }
+        drop_timing = timing.get(drop_type, "Align with next release cycle or standalone campaign.")
+
+        artist_cut = round(optimized_price * (1 - MELODIO_FEE_PCT), 2)
+        projected_revenue = round(units_estimate * artist_cut, 2)
+
+        return {
+            "optimized_price": optimized_price,
+            "demand_prediction": demand,
+            "bundle_strategy": bundle_strategy,
+            "product_description": product_description,
+            "drop_timing": drop_timing,
+            "projected_revenue": projected_revenue,
+            "artist_name": artist_name,
+            "fan_count": fan_count,
+            "units_estimate": units_estimate,
+            "hero_skill": "drop_optimizer",
         }
 
     # ----------------------------------------------------------------

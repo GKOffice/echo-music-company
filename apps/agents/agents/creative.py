@@ -66,6 +66,8 @@ class CreativeAgent(BaseAgent):
             "create_lyric_video": self._create_lyric_video,
             "design_merch": self._design_merch,
             "check_artwork_specs": self._check_artwork_specs,
+            # Hero skills
+            "brand_oracle": self._task_brand_oracle,
             # legacy
             "artwork_review": self._artwork_review,
             "generate_artwork_brief": self._generate_artwork,
@@ -369,6 +371,140 @@ class CreativeAgent(BaseAgent):
             "passed": passed,
             "issues": issues,
             "specs_checked": ARTWORK_SPECS,
+        }
+
+    # ----------------------------------------------------------------
+    # Hero skills
+    # ----------------------------------------------------------------
+
+    async def _task_brand_oracle(self, task: AgentTask) -> dict:
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        artist_name = task.payload.get("artist_name", "")
+        genre = (task.payload.get("genre") or "default").lower()
+        vibe_keywords = task.payload.get("vibe_keywords") or []
+
+        genre_color_map = {
+            "hip-hop": [
+                {"hex": "#1a1a2e", "role": "primary", "rationale": "Deep navy — dominance, street authority"},
+                {"hex": "#f5c518", "role": "secondary", "rationale": "Gold — wealth, status, legacy"},
+                {"hex": "#e94560", "role": "accent", "rationale": "Red-pink — energy, boldness"},
+            ],
+            "pop": [
+                {"hex": "#ff6b9d", "role": "primary", "rationale": "Hot pink — energy, youthful appeal"},
+                {"hex": "#ffe4f0", "role": "secondary", "rationale": "Soft blush — approachable, clean"},
+                {"hex": "#c44dff", "role": "accent", "rationale": "Electric purple — excitement, fun"},
+            ],
+            "electronic": [
+                {"hex": "#0f172a", "role": "primary", "rationale": "Near-black — futurism, depth"},
+                {"hex": "#00f5ff", "role": "secondary", "rationale": "Neon cyan — technology, energy"},
+                {"hex": "#7c3aed", "role": "accent", "rationale": "Electric violet — digital, creative"},
+            ],
+            "indie": [
+                {"hex": "#fef3c7", "role": "primary", "rationale": "Warm cream — organic, nostalgic"},
+                {"hex": "#92400e", "role": "secondary", "rationale": "Earthy brown — authenticity, roots"},
+                {"hex": "#d97706", "role": "accent", "rationale": "Amber — warmth, indie spirit"},
+            ],
+            "r&b": [
+                {"hex": "#2d1b4e", "role": "primary", "rationale": "Deep plum — sensuality, luxury"},
+                {"hex": "#7c3aed", "role": "secondary", "rationale": "Royal purple — soul, sophistication"},
+                {"hex": "#fde68a", "role": "accent", "rationale": "Warm gold — warmth, intimacy"},
+            ],
+        }
+        genre_color_map["default"] = [
+            {"hex": "#0a0a0f", "role": "primary", "rationale": "Near-black — premium, timeless"},
+            {"hex": "#8b5cf6", "role": "secondary", "rationale": "Melodio purple — brand consistency"},
+            {"hex": "#10b981", "role": "accent", "rationale": "Emerald — growth, distinctiveness"},
+        ]
+
+        typography_map = {
+            "hip-hop": "Bold condensed sans-serif — heavy weight, urban geometry (Bebas Neue, Druk)",
+            "pop": "Elegant display with clean body — approachable but polished (Playfair Display, DM Sans)",
+            "electronic": "Geometric monospace with futurist edge — sharp angles (Space Grotesk, Roboto Mono)",
+            "indie": "Serif warmth with handcrafted feel — textured, analog (Libre Baskerville, Source Sans)",
+            "r&b": "Refined serif with soft weight — luxurious, sensual (Cormorant Garamond, Lato)",
+            "default": "Modern geometric sans-serif — clean, versatile (Syne, Inter)",
+        }
+
+        motif_map = {
+            "hip-hop": ["street typography and graffiti textures", "gold chains and luxury objects", "city skylines at night"],
+            "pop": ["bold color blocking with clean negative space", "glitter and light flares", "expressive portraiture with soft gradients"],
+            "electronic": ["circuit board patterns and data visualization", "neon light trails in dark environments", "abstract waveforms and frequency grids"],
+            "indie": ["film grain and analog photography textures", "natural landscapes and botanical elements", "handwritten annotations and lo-fi collage"],
+            "r&b": ["velvet textures and candlelight warmth", "intimate portraiture with dramatic shadow", "rose petals and jewel tones"],
+            "default": ["abstract geometric forms", "gradient overlays on dark fields", "minimal typographic compositions"],
+        }
+
+        mood_base = {
+            "hip-hop": ["raw", "authentic", "powerful", "urban", "legacy", "hustle", "bold", "gold", "cinematic", "unapologetic"],
+            "pop": ["vibrant", "fun", "relatable", "bright", "energetic", "clean", "joyful", "youthful", "accessible", "catchy"],
+            "electronic": ["futuristic", "euphoric", "dark", "neon", "minimal", "infinite", "digital", "pulse", "nocturnal", "synthetic"],
+            "indie": ["nostalgic", "honest", "warm", "raw", "earthy", "intimate", "lo-fi", "handmade", "sincere", "textured"],
+            "r&b": ["sensual", "soulful", "luxe", "warm", "deep", "emotional", "smooth", "velvet", "intimate", "timeless"],
+            "default": ["premium", "dark", "minimal", "modern", "distinctive", "polished", "bold", "striking", "clean", "iconic"],
+        }
+
+        palette_key = genre if genre in genre_color_map else "default"
+        color_palette = genre_color_map[palette_key]
+        typography = typography_map.get(palette_key, typography_map["default"])
+        motifs = motif_map.get(palette_key, motif_map["default"])
+        mood_words = mood_base.get(palette_key, mood_base["default"])
+
+        if vibe_keywords:
+            mood_words = list(dict.fromkeys(vibe_keywords[:3] + mood_words))[:10]
+
+        primary_hex = color_palette[0]["hex"]
+        accent_hex = color_palette[2]["hex"]
+
+        logo_concept = (
+            f"Wordmark-first logo: '{artist_name}' in {typography.split('—')[0].strip()} "
+            f"using {primary_hex} on dark background with {accent_hex} accent on key letter or underline. "
+            f"Icon mark: abstract symbol derived from first initial or genre motif. "
+            f"Works at 16px favicon and 4ft vinyl banner."
+        )
+
+        social_template = (
+            f"Grid aesthetic: alternating hero image posts (full-bleed, {accent_hex} border) "
+            f"and typography-only quote cards ({primary_hex} bg, {accent_hex} type). "
+            f"Story format: 9:16 artist photo top half, track info lower third. "
+            f"Consistent {genre} {mood_words[0]} energy throughout."
+        )
+
+        brand_score = 55
+        if genre != "default":
+            brand_score += 15
+        if vibe_keywords:
+            brand_score += 15
+        if artist_name:
+            brand_score += 15
+        brand_score = min(brand_score, 100)
+
+        if brand_score >= 90:
+            uniqueness_rating = "Iconic"
+        elif brand_score >= 75:
+            uniqueness_rating = "Distinctive"
+        elif brand_score >= 60:
+            uniqueness_rating = "Emerging"
+        else:
+            uniqueness_rating = "Generic"
+
+        await self.log_audit("brand_oracle", "artists", artist_id, {
+            "artist_name": artist_name,
+            "genre": genre,
+            "brand_score": brand_score,
+        })
+
+        return {
+            "brand_identity": {
+                "color_palette": color_palette,
+                "typography": typography,
+                "motifs": motifs,
+                "mood_board": mood_words,
+                "logo_concept": logo_concept,
+                "social_style": social_template,
+            },
+            "brand_score": brand_score,
+            "uniqueness_rating": uniqueness_rating,
+            "hero_skill": "brand_oracle",
         }
 
     # ----------------------------------------------------------------

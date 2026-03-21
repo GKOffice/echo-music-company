@@ -62,7 +62,7 @@ class InfrastructureAgent(BaseAgent):
 
     async def handle_task(self, task: AgentTask) -> AgentResult:
         handlers = {
-            "health_check": self._health_check,
+            "health_check": self._task_health_check,
             "rotate_api_key": self._rotate_api_key,
             "check_rate_limits": self._check_rate_limits,
             "backup_status": self._backup_status,
@@ -78,7 +78,130 @@ class InfrastructureAgent(BaseAgent):
         return AgentResult(success=True, task_id=task.task_id, agent_id=self.agent_id, result=result)
 
     # ----------------------------------------------------------------
-    # health_check
+    # Hero skills
+    # ----------------------------------------------------------------
+
+    async def _task_health_check(self, task: AgentTask) -> dict:
+        import subprocess
+
+        services_filter = task.payload.get("services")
+        auto_fix = task.payload.get("auto_fix", False)
+        services = {}
+        issues = []
+        auto_fixes_attempted = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        async def check_tcp(host: str, port: int) -> dict:
+            t0 = time.time()
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port), timeout=5.0
+                )
+                writer.close()
+                await writer.wait_closed()
+                return {"status": "healthy", "response_time_ms": int((time.time() - t0) * 1000), "last_check": now_iso}
+            except Exception as e:
+                return {"status": "down", "response_time_ms": int((time.time() - t0) * 1000), "last_check": now_iso, "error": str(e)}
+
+        def attempt_restart(service_name: str):
+            try:
+                subprocess.Popen(["railway", "restart", "--service", service_name])
+                auto_fixes_attempted.append(f"railway restart --service {service_name}")
+            except Exception as e:
+                auto_fixes_attempted.append(f"restart {service_name} failed: {e}")
+
+        # API
+        if not services_filter or "api" in services_filter:
+            result = await check_tcp("localhost", 8000)
+            services["api"] = result
+            if result["status"] != "healthy":
+                issues.append("API server (port 8000) is down")
+                if auto_fix:
+                    attempt_restart("api")
+
+        # Web
+        if not services_filter or "web" in services_filter:
+            result = await check_tcp("localhost", 3000)
+            services["web"] = result
+            if result["status"] != "healthy":
+                issues.append("Web server (port 3000) is down")
+                if auto_fix:
+                    attempt_restart("web")
+
+        # Redis
+        if not services_filter or "redis" in services_filter:
+            t0 = time.time()
+            try:
+                if bus._redis:
+                    await bus._redis.ping()
+                    services["redis"] = {"status": "healthy", "response_time_ms": int((time.time() - t0) * 1000), "last_check": now_iso}
+                else:
+                    services["redis"] = {"status": "down", "response_time_ms": 0, "last_check": now_iso}
+                    issues.append("Redis not connected")
+                    if auto_fix:
+                        attempt_restart("redis")
+            except Exception as e:
+                services["redis"] = {"status": "down", "response_time_ms": int((time.time() - t0) * 1000), "last_check": now_iso, "error": str(e)}
+                issues.append(f"Redis: {e}")
+                if auto_fix:
+                    attempt_restart("redis")
+
+        # Postgres
+        if not services_filter or "postgres" in services_filter:
+            t0 = time.time()
+            if self._db_pool:
+                try:
+                    await self._db_pool.fetchval("SELECT 1")
+                    services["postgres"] = {"status": "healthy", "response_time_ms": int((time.time() - t0) * 1000), "last_check": now_iso}
+                except Exception as e:
+                    services["postgres"] = {"status": "down", "response_time_ms": int((time.time() - t0) * 1000), "last_check": now_iso, "error": str(e)}
+                    issues.append(f"PostgreSQL: {e}")
+                    if auto_fix:
+                        attempt_restart("postgres")
+            else:
+                services["postgres"] = {"status": "down", "response_time_ms": 0, "last_check": now_iso}
+                issues.append("PostgreSQL pool not initialized")
+
+        # Agents (last heartbeat < 5 min)
+        if not services_filter or "agents" in services_filter:
+            now_ts = time.time()
+            agent_statuses = {}
+            for agent_id in ALL_AGENT_IDS:
+                hb = self._heartbeats.get(agent_id)
+                if hb:
+                    silent_secs = now_ts - hb.get("last_seen", now_ts)
+                    if silent_secs < 300:
+                        status = "healthy"
+                    elif silent_secs < 900:
+                        status = "degraded"
+                    else:
+                        status = "down"
+                        issues.append(f"Agent {agent_id} silent for {int(silent_secs / 60)} min")
+                    agent_statuses[agent_id] = {"status": status, "silent_seconds": int(silent_secs), "last_check": now_iso}
+                else:
+                    agent_statuses[agent_id] = {"status": "unknown", "silent_seconds": None, "last_check": now_iso}
+            services["agents"] = agent_statuses
+
+        critical_down = [s for s in ["api", "postgres", "redis"] if services.get(s, {}).get("status") == "down"]
+        overall_status = "critical" if critical_down else ("degraded" if issues else "healthy")
+
+        await self.log_audit("self_healing_health_check", "infrastructure", None, {
+            "overall_status": overall_status,
+            "issues": issues,
+            "auto_fix": auto_fix,
+            "auto_fixes_attempted": auto_fixes_attempted,
+        })
+
+        return {
+            "overall_status": overall_status,
+            "services": services,
+            "issues": issues,
+            "auto_fixes_attempted": auto_fixes_attempted,
+            "hero_skill": "self_healing_stack",
+        }
+
+    # ----------------------------------------------------------------
+    # health_check (internal)
     # ----------------------------------------------------------------
 
     async def _health_check(self, task: AgentTask) -> dict:

@@ -83,6 +83,8 @@ class CEOAgent(BaseAgent):
             "company_report": self._task_company_report,
             "set_priority": self._task_set_priority,
             "delegate": self._task_delegate,
+            # Hero skills
+            "strategic_pulse": self._task_strategic_pulse,
         }
         handler = handlers.get(task.task_type, self._task_default)
         return await handler(task)
@@ -403,6 +405,111 @@ class CEOAgent(BaseAgent):
             task_id=task.task_id,
             agent_id=self.agent_id,
             result={"delegated_to": to_agent, "task_type": delegated_type},
+        )
+
+    async def _task_strategic_pulse(self, task: AgentTask) -> AgentResult:
+        scope = task.payload.get("scope", "full")
+
+        # Agent status from in-memory registry
+        agent_status = {}
+        if scope in ("full", "agents"):
+            for aid, reg_data in self._agent_registry.items():
+                agent_status[aid] = {
+                    "status": reg_data.get("status", "unknown"),
+                    "last_seen": reg_data.get("last_seen"),
+                }
+
+        # Key platform metrics
+        key_metrics = {}
+        if scope in ("full", "revenue", "artists"):
+            metrics_row = await self.db_fetchrow(
+                """
+                SELECT
+                  (SELECT COUNT(*) FROM artists WHERE status = 'signed') AS total_artists,
+                  (SELECT COUNT(*) FROM releases WHERE status != 'draft') AS total_releases,
+                  (SELECT COALESCE(SUM(net_amount), 0) FROM royalties) AS total_revenue,
+                  (SELECT COALESCE(SUM(total_points), 0) FROM echo_points) AS points_sold,
+                  (SELECT COUNT(*) FROM agent_tasks WHERE status = 'completed') AS tasks_completed,
+                  (SELECT COUNT(*) FROM agent_tasks WHERE status = 'failed') AS tasks_failed
+                """
+            )
+            key_metrics = dict(metrics_row) if metrics_row else {}
+
+        # Phase 4 checklist — look for audit_log evidence
+        phase4_checklist = {
+            "railway_deploy": False,
+            "auth_live": False,
+            "stripe_live": False,
+            "tos_published": False,
+            "kyc_enabled": False,
+        }
+        phase4_rows = await self.db_fetch(
+            "SELECT action FROM audit_log WHERE action IN ('railway_deploy','auth_configured','stripe_live','tos_published','kyc_enabled') ORDER BY created_at DESC LIMIT 10"
+        )
+        if phase4_rows:
+            done = {r["action"] for r in phase4_rows}
+            phase4_checklist["railway_deploy"] = "railway_deploy" in done
+            phase4_checklist["auth_live"] = "auth_configured" in done
+            phase4_checklist["stripe_live"] = "stripe_live" in done
+            phase4_checklist["tos_published"] = "tos_published" in done
+            phase4_checklist["kyc_enabled"] = "kyc_enabled" in done
+
+        total_revenue = float(key_metrics.get("total_revenue") or 0)
+        total_artists = int(key_metrics.get("total_artists") or 0)
+        total_releases = int(key_metrics.get("total_releases") or 0)
+        failed = int(key_metrics.get("tasks_failed") or 0)
+        completed = int(key_metrics.get("tasks_completed") or 0)
+        error_rate = failed / (failed + completed) if (failed + completed) > 0 else 0
+
+        # Top 3 blockers
+        top_blockers = []
+        phase4_incomplete = [k for k, v in phase4_checklist.items() if not v]
+        if phase4_incomplete:
+            top_blockers.append(f"Phase 4 incomplete: {', '.join(phase4_incomplete[:3])}")
+        if total_revenue < 100:
+            top_blockers.append("Revenue near zero — no paid transactions recorded yet")
+        if total_artists == 0:
+            top_blockers.append("No signed artists — A&R pipeline needs activation")
+        elif total_artists < 3:
+            top_blockers.append(f"Only {total_artists} signed artist(s) — grow roster for scale")
+        if error_rate > 0.2:
+            top_blockers.append(f"High agent task error rate ({error_rate:.0%}) — investigate failing agents")
+        top_blockers = top_blockers[:3]
+
+        # Platform health score 0–100
+        phase4_done = sum(1 for v in phase4_checklist.values() if v)
+        phase4_score = phase4_done / len(phase4_checklist) * 30
+        revenue_score = min(30.0, total_revenue / 1000 * 30)
+        roster_score = min(20.0, total_artists * 5)
+        agent_online = sum(1 for v in agent_status.values() if v.get("status") == "online")
+        agent_score = min(20.0, agent_online / 21 * 20)
+        platform_health = int(phase4_score + revenue_score + roster_score + agent_score)
+
+        # Executive briefing (3 sentences)
+        phase_str = f"{phase4_done}/5 Phase 4 items complete" if phase4_done < 5 else "Phase 4 complete"
+        revenue_str = f"${total_revenue:,.0f} total revenue" if total_revenue > 0 else "zero revenue recorded"
+        agents_str = f"{agent_online} of 21 agents online"
+        opportunity = "close first artist deal and activate release pipeline" if total_artists == 0 else f"scale {total_artists} artist roster — {total_releases} release(s) in pipeline"
+        blocker = top_blockers[0] if top_blockers else "no critical blockers identified"
+        executive_briefing = (
+            f"Platform health at {platform_health}/100 — {phase_str}, {revenue_str}, {agents_str}. "
+            f"Biggest opportunity: {opportunity}. "
+            f"Top blocker: {blocker}."
+        )
+
+        return AgentResult(
+            success=True,
+            task_id=task.task_id,
+            agent_id=self.agent_id,
+            result={
+                "platform_health": platform_health,
+                "agent_status": agent_status,
+                "key_metrics": key_metrics,
+                "top_blockers": top_blockers,
+                "executive_briefing": executive_briefing,
+                "phase4_checklist": phase4_checklist,
+                "hero_skill": "strategic_pulse",
+            },
         )
 
     async def _task_default(self, task: AgentTask) -> AgentResult:
