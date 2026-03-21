@@ -61,6 +61,7 @@ class DealRoomAgent(BaseAgent):
             "my_deals":         self._task_my_deals,
             "suggest_price":    self._task_suggest_price,
             "match_creators":   self._task_match_creators,
+            "rights_valuation": self._task_rights_valuation,
         }
         handler = handlers.get(task.task_type, self._task_default)
         return await handler(task)
@@ -899,6 +900,149 @@ class DealRoomAgent(BaseAgent):
         return AgentResult(
             success=True, task_id=task.task_id, agent_id=self.agent_id,
             result={"matches": matches, "count": len(matches)},
+        )
+
+    # ── Rights Valuation AI ──────────────────────────────────────────
+
+    async def _task_rights_valuation(self, task: AgentTask) -> AgentResult:
+        p = task.payload
+        release_id = p.get("release_id")
+        rights_type = p.get("rights_type", "master")  # master|publishing|sync|full
+        territory = p.get("territory", "worldwide")
+
+        # Pull revenue data from DB
+        rev = await self.db_fetchrow(
+            """
+            SELECT COALESCE(SUM(gross_amount), 0) as total_gross,
+                   COUNT(DISTINCT period_start) as period_count
+            FROM royalties
+            WHERE release_id = $1::uuid
+            """,
+            release_id,
+        ) if release_id else None
+
+        total_revenue = float(rev["total_gross"]) if rev else 0.0
+        periods = int(rev["period_count"]) if rev else 0
+
+        # Annualize revenue
+        annual_revenue = total_revenue if periods <= 4 else total_revenue / max(periods / 4, 1)
+        if annual_revenue < 1000:
+            annual_revenue = 5000.0  # floor for illustrative purposes
+
+        # Base multiples by rights type
+        MULTIPLES = {
+            "master":     (10.0, 12.5, 15.0),
+            "publishing": (12.0, 15.0, 18.0),
+            "sync":       (5.0, 6.5, 8.0),
+            "full":       (11.0, 14.0, 17.0),
+        }
+        low_mult, mid_mult, high_mult = MULTIPLES.get(rights_type, MULTIPLES["master"])
+
+        # Full catalog premium
+        if rights_type == "full":
+            low_mult *= 1.10
+            mid_mult *= 1.10
+            high_mult *= 1.10
+
+        # Artist catalog depth modifier
+        release_count = 0
+        artist_id_row = None
+        if release_id:
+            artist_id_row = await self.db_fetchrow(
+                "SELECT artist_id FROM releases WHERE id = $1::uuid", release_id
+            )
+        if artist_id_row:
+            rc = await self.db_fetchrow(
+                "SELECT COUNT(*) as cnt FROM releases WHERE artist_id = $1::uuid AND status = 'distributed'",
+                artist_id_row["artist_id"],
+            )
+            release_count = int(rc["cnt"]) if rc else 0
+
+        depth_mod = 1.0
+        if release_count >= 10:
+            depth_mod = 1.20
+        elif release_count >= 5:
+            depth_mod = 1.10
+        elif release_count <= 1:
+            depth_mod = 0.85
+
+        # Trend momentum modifier (use echo_score as proxy)
+        trend_mod = 1.0
+        if artist_id_row:
+            artist = await self.db_fetchrow(
+                "SELECT echo_score FROM artists WHERE id = $1::uuid", artist_id_row["artist_id"]
+            )
+            if artist:
+                score = int(artist.get("echo_score") or 50)
+                if score >= 75:
+                    trend_mod = 1.15
+                elif score <= 30:
+                    trend_mod = 0.85
+
+        # Territory modifier
+        TERRITORY_MODS = {
+            "worldwide": 1.0,
+            "us": 0.6,
+            "us_only": 0.6,
+            "eu": 0.4,
+            "eu_only": 0.4,
+        }
+        territory_mod = TERRITORY_MODS.get(territory.lower().replace(" ", "_"), 1.0)
+
+        combined_mod = depth_mod * trend_mod * territory_mod
+
+        val_low = round(annual_revenue * low_mult * combined_mod, 2)
+        val_mid = round(annual_revenue * mid_mult * combined_mod, 2)
+        val_high = round(annual_revenue * high_mult * combined_mod, 2)
+        multiple_used = round(mid_mult * combined_mod, 2)
+
+        # Famous comparable deals (hardcoded reference)
+        COMPARABLE_DEALS = [
+            {
+                "deal": "Bruce Springsteen catalog sale to Sony Music",
+                "year": 2021,
+                "value": "$500M",
+                "multiple": "~25x annual earnings",
+                "note": "Iconic legacy catalog premium",
+            },
+            {
+                "deal": "Justin Bieber publishing rights sale to Hipgnosis",
+                "year": 2023,
+                "value": "$200M",
+                "multiple": "~18x annual publishing income",
+                "note": "Pop catalog with strong sync and streaming income",
+            },
+            {
+                "deal": "Imagine Dragons catalog acquisition",
+                "year": 2022,
+                "value": "$100M",
+                "multiple": "~15x annual revenue",
+                "note": "Active touring artist with strong sync history",
+            },
+        ]
+
+        methodology = (
+            f"{rights_type.capitalize()} rights valued at {low_mult:.1f}-{high_mult:.1f}x annual revenue "
+            f"({territory} territory). Modifiers applied: catalog depth ({depth_mod:.2f}x), "
+            f"trend momentum ({trend_mod:.2f}x), territory ({territory_mod:.2f}x)."
+        )
+
+        logger.info(f"[DealRoom] Rights valuation: {rights_type}/{territory} — ${val_mid:,.0f} mid")
+        return AgentResult(
+            success=True, task_id=task.task_id, agent_id=self.agent_id,
+            result={
+                "release_id": release_id,
+                "rights_type": rights_type,
+                "territory": territory,
+                "annual_revenue_basis": round(annual_revenue, 2),
+                "valuation_low": val_low,
+                "valuation_mid": val_mid,
+                "valuation_high": val_high,
+                "multiple_used": multiple_used,
+                "methodology": methodology,
+                "comparable_deals": COMPARABLE_DEALS,
+                "hero_skill": "rights_valuation_ai",
+            },
         )
 
     # ── Background Loops ─────────────────────────────────────────────

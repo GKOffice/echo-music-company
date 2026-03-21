@@ -63,6 +63,7 @@ class VaultAgent(BaseAgent):
             "ai_confidence_score": self._task_ai_confidence_score,
             "enforce_marketing_rule": self._task_enforce_marketing_rule,
             "check_manipulation": self._task_check_manipulation,
+            "demand_forecast": self._task_demand_forecast,
         }
         handler = handlers.get(task.task_type, self._task_default)
         return await handler(task)
@@ -1058,6 +1059,110 @@ class VaultAgent(BaseAgent):
                 "circuit_breaker_triggered": circuit_breaker_triggered,
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }
+        )
+
+    async def _task_demand_forecast(self, task: AgentTask) -> AgentResult:
+        release_id = task.payload.get("release_id")
+        artist_id = task.payload.get("artist_id")
+        points_available = int(task.payload.get("points_available") or 100)
+        price_per_point = float(task.payload.get("price_per_point") or 0.0)
+
+        # Get Melodio Score from DB (default 50)
+        melodio_score = 50
+        if artist_id:
+            artist = await self.db_fetchrow(
+                "SELECT echo_score, genre FROM artists WHERE id = $1::uuid", artist_id
+            )
+            if artist:
+                melodio_score = int(artist.get("echo_score") or 50)
+                genre = (artist.get("genre") or "other").lower()
+            else:
+                genre = "other"
+        else:
+            genre = "other"
+
+        # Historical sell-through from previous drops
+        hist = await self.db_fetchrow(
+            """
+            SELECT COUNT(*) as drop_count,
+                   COALESCE(AVG(points_purchased), 0) as avg_purchased
+            FROM echo_points
+            WHERE artist_id = $1::uuid
+            """,
+            artist_id,
+        ) if artist_id else None
+        hist_drops = int(hist["drop_count"]) if hist else 0
+        hist_avg = float(hist["avg_purchased"]) if hist else 0.0
+
+        # Genre popularity multiplier
+        GENRE_MULTIPLIERS = {
+            "pop": 1.5,
+            "hip-hop": 1.3,
+            "r&b": 1.2,
+            "electronic": 1.2,
+            "indie": 1.0,
+            "rock": 1.0,
+            "other": 1.0,
+        }
+        genre_mult = GENRE_MULTIPLIERS.get(genre, 1.0)
+
+        # Timing factor — Fridays get 1.4x
+        from datetime import datetime as _dt
+        today_dow = _dt.now().weekday()  # 0=Mon, 4=Fri
+        days_to_friday = (4 - today_dow) % 7
+        timing_note = "today is Friday" if today_dow == 4 else f"{days_to_friday} day(s) to next Friday"
+        timing_mult = 1.4 if today_dow == 4 else 1.0
+
+        # Base demand score from Melodio Score
+        base_demand = min(100, melodio_score * 0.7 + 20)
+
+        # Boost from historical data
+        if hist_drops > 3:
+            base_demand = min(100, base_demand + 10)
+        if hist_avg > 5:
+            base_demand = min(100, base_demand + 5)
+
+        demand_score = int(min(100, base_demand * genre_mult))
+
+        # Estimated sell-through in 7 days
+        sellthrough_pct = round(min(100.0, demand_score * timing_mult), 1)
+
+        # Optimal price suggestion — higher demand → can command premium
+        if price_per_point > 0:
+            if demand_score >= 75:
+                optimal_price = round(price_per_point * 1.15, 2)
+            elif demand_score >= 50:
+                optimal_price = round(price_per_point * 1.0, 2)
+            else:
+                optimal_price = round(price_per_point * 0.90, 2)
+        else:
+            # Suggest based on score (rough USD range)
+            optimal_price = round(max(1.0, demand_score * 0.5), 2)
+
+        projected_revenue = round(points_available * (sellthrough_pct / 100) * optimal_price, 2)
+
+        confidence = "high" if hist_drops >= 3 else ("medium" if hist_drops >= 1 else "low")
+
+        recommended_drop_time = (
+            f"Drop on Friday — {timing_note}. Best window: 9AM-12PM local time."
+            if today_dow == 4
+            else f"Wait for Friday ({timing_note}) for 40% higher demand. Best window: 9AM-12PM local time."
+        )
+
+        logger.info(f"[Vault] Demand forecast: score={demand_score}, sellthrough={sellthrough_pct}%")
+        return AgentResult(
+            success=True, task_id=task.task_id, agent_id=self.agent_id,
+            result={
+                "release_id": release_id,
+                "artist_id": artist_id,
+                "demand_score": demand_score,
+                "estimated_sellthrough_pct": sellthrough_pct,
+                "projected_revenue": projected_revenue,
+                "optimal_price": optimal_price,
+                "recommended_drop_time": recommended_drop_time,
+                "confidence": confidence,
+                "hero_skill": "points_demand_engine",
+            },
         )
 
     async def _task_default(self, task: AgentTask) -> AgentResult:

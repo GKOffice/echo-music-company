@@ -95,6 +95,7 @@ class ArtistDevAgent(BaseAgent):
             "find_collaborations": self._find_collaborations,
             "onboard_artist": self._onboard_artist,
             "generate_career_milestone": self._generate_career_milestone,
+            "career_gps": self._task_career_gps,
         }
         handler = handlers.get(task.task_type)
         result = await handler(task) if handler else {"status": "unknown_task", "task_type": task.task_type}
@@ -355,6 +356,219 @@ class ArtistDevAgent(BaseAgent):
             "artist_name": artist_name,
             "onboarding_steps": [{"agent": a, "task": t} for a, t, _ in onboarding_steps],
             "status": "onboarding_started",
+        }
+
+    async def _task_career_gps(self, task: AgentTask) -> dict:
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        goal = task.payload.get("goal", "100k monthly listeners")
+
+        artist = await self.db_fetchrow(
+            "SELECT name, genre, echo_score, monthly_listeners, status FROM artists WHERE id = $1::uuid",
+            artist_id,
+        )
+        if not artist:
+            return {"error": "Artist not found", "artist_id": artist_id}
+
+        monthly_listeners = int(artist.get("monthly_listeners") or 0)
+        echo_score = int(artist.get("echo_score") or 0)
+        genre = (artist.get("genre") or "pop").lower()
+
+        # Count releases
+        release_count = await self.db_fetchrow(
+            "SELECT COUNT(*) as cnt FROM releases WHERE artist_id = $1::uuid AND status = 'distributed'",
+            artist_id,
+        )
+        releases = int(release_count["cnt"]) if release_count else 0
+
+        # Count sync placements
+        sync_count = await self.db_fetchrow(
+            "SELECT COUNT(*) as cnt FROM royalties WHERE artist_id = $1::uuid AND source = 'sync'",
+            artist_id,
+        )
+        sync_placements = int(sync_count["cnt"]) if sync_count else 0
+
+        current_baseline = {
+            "monthly_listeners": monthly_listeners,
+            "echo_score": echo_score,
+            "releases": releases,
+            "sync_placements": sync_placements,
+            "genre": genre,
+        }
+
+        goal_lower = goal.lower()
+
+        # Build 12-month roadmap tailored to goal
+        def _months_for_goal(goal_str: str) -> list:
+            base_phases = [
+                # Month 1-3: Foundation
+                (1, "Foundation", [
+                    "Complete brand kit and visual identity",
+                    "Audit and clean existing catalog",
+                    "Set up all social profiles consistently",
+                    "Define artist niche and target audience",
+                ], [
+                    "Brief Creative Agent on brand direction",
+                    "Upload full catalog with proper metadata",
+                    "Post 3x per week to build baseline audience",
+                ]),
+                (2, "Foundation", [
+                    "Release first single of the 12-month plan",
+                    "Launch pre-save campaign",
+                    "Establish press contact list",
+                ], [
+                    "Brief Marketing Agent for release campaign",
+                    "Brief PR Agent for initial press outreach",
+                    "Submit to editorial playlists 6 weeks early",
+                ]),
+                (3, "Foundation", [
+                    "Analyze release performance and iterate",
+                    "Build email list (target: 500 subscribers)",
+                    "Identify top 3 collaboration targets",
+                ], [
+                    "Review streaming analytics with Analytics Agent",
+                    "Launch newsletter or fan community",
+                    "Brief Artist Dev on collaboration strategy",
+                ]),
+                # Month 4-6: Momentum
+                (4, "Momentum", [
+                    "Release second single",
+                    "Submit to 20+ playlists via SubmitHub",
+                    "First press feature published",
+                ], [
+                    "Run paid social ads on release ($200 test budget)",
+                    "Brief Sync Agent to tag catalog",
+                    "Brief PR Agent for second press push",
+                ]),
+                (5, "Momentum", [
+                    "Pitch 5 sync opportunities",
+                    "Grow monthly listeners by 30%",
+                    "Launch Melodio Points drop",
+                ], [
+                    "Brief Vault Agent for points pricing",
+                    "Run fan engagement campaign",
+                    "Analyze which content drives streams",
+                ]),
+                (6, "Momentum", [
+                    "Release EP or third single",
+                    "Mid-year performance review",
+                    "Secure first sync placement or brand partnership",
+                ], [
+                    "Brief Finance Agent for mid-year royalty review",
+                    "Update roadmap based on data",
+                    "Scale ads on best-performing release",
+                ]),
+                # Month 7-9: Acceleration
+                (7, "Acceleration", [
+                    "Announce and plan first collaboration release",
+                    "Submit to Spotify editorial playlists directly",
+                    "Increase posting cadence to 5x per week",
+                ], [
+                    "Brief Artist Dev for collab partner search",
+                    "Brief Social Agent for viral content strategy",
+                    "Pitch 10 sync opportunities",
+                ]),
+                (8, "Acceleration", [
+                    "Release collaboration track",
+                    "Cross-promote with collaborator's audience",
+                    "Target 3 media features in month",
+                ], [
+                    "Allocate 50% of release marketing budget to collab",
+                    "Brief PR Agent for collab press push",
+                    "Analyze fan overlap and retain new listeners",
+                ]),
+                (9, "Acceleration", [
+                    "Fan growth sprint — target 20% uplift",
+                    "Launch second Melodio Points drop",
+                    "Evaluate touring or live performance opportunities",
+                ], [
+                    "Run superfan reward campaign via Vault Agent",
+                    "Brief CEO Agent on touring feasibility",
+                    "Pitch to live event bookers",
+                ]),
+                # Month 10-12: Breakthrough
+                (10, "Breakthrough", [
+                    "Begin major campaign rollout",
+                    "Submit year-end editorial pitches",
+                    "Finalize album or next-cycle plan",
+                ], [
+                    "Brief Marketing Agent for full campaign launch",
+                    "Brief Analytics Agent for year-end trend targeting",
+                    "Draft next year's strategy with CEO Agent",
+                ]),
+                (11, "Breakthrough", [
+                    "Release biggest project of the year",
+                    "Execute full press + ads + social blitz",
+                    "Target goal achievement milestone",
+                ], [
+                    "All agents on coordinated release execution",
+                    "Maximum ad spend this month",
+                    "Brief Comms Agent for fan milestone celebration",
+                ]),
+                (12, "Breakthrough", [
+                    "Achieve 12-month goal",
+                    "Year-end royalty review and reinvestment plan",
+                    "Lock in next year's release calendar",
+                ], [
+                    "Brief Finance Agent for annual royalty audit",
+                    "Set new 12-month goals with CEO Agent",
+                    "Celebrate and document wins for press",
+                ]),
+            ]
+
+            # Tailor specific months to goal
+            if "sync" in goal_str:
+                base_phases[4][2].insert(0, "Secure first paid sync placement ($500+)")
+                base_phases[4][3].insert(0, "Brief Sync Agent: Placement Matchmaker hero skill")
+                base_phases[7][2].insert(0, "Secure 3 sync placements total")
+                base_phases[10][2].insert(0, "Secure marquee sync (TV series or national ad)")
+            elif "touring" in goal_str or "live" in goal_str:
+                base_phases[5][2].insert(0, "Book first local/regional show")
+                base_phases[7][2].insert(0, "Book opening slot on larger tour")
+                base_phases[9][2].insert(0, "Announce headlining shows in key markets")
+                base_phases[10][2].insert(0, "Execute first headline tour")
+            elif "listeners" in goal_str or "stream" in goal_str:
+                base_phases[4][2].insert(0, "Hit 10x current monthly listener count")
+                base_phases[7][2].insert(0, "Hit 50% of listener goal")
+                base_phases[10][2].insert(0, "Hit listener goal — celebrate with fans")
+
+            return base_phases
+
+        roadmap_raw = _months_for_goal(goal_lower)
+        roadmap = [
+            {
+                "month": m,
+                "phase": phase,
+                "milestones": milestones,
+                "actions": actions,
+            }
+            for m, phase, milestones, actions in roadmap_raw
+        ]
+
+        # Honest success probability
+        prob = 50
+        if monthly_listeners > 5000:
+            prob += 10
+        if releases >= 3:
+            prob += 5
+        if echo_score > 60:
+            prob += 10
+        if sync_placements > 0:
+            prob += 5
+        if "100k" in goal_lower and monthly_listeners < 1000:
+            prob -= 15
+        elif "100k" in goal_lower and monthly_listeners > 20000:
+            prob += 10
+        success_probability = max(10, min(95, prob))
+
+        logger.info(f"[ArtistDev] Career GPS generated for {artist['name']} — goal: {goal}")
+        return {
+            "artist_id": artist_id,
+            "artist_name": artist["name"],
+            "goal": goal,
+            "current_baseline": current_baseline,
+            "roadmap": roadmap,
+            "success_probability": success_probability,
+            "hero_skill": "career_gps",
         }
 
     async def _generate_career_milestone(self, task: AgentTask) -> dict:

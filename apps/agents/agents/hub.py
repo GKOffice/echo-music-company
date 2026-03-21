@@ -69,6 +69,7 @@ class HubAgent(BaseAgent):
             "combine_beats": self._combine_beats,
             "approve_beat": self._approve_beat,
             "calculate_producer_payment": self._calculate_producer_payment,
+            "beat_dna": self._task_beat_dna,
             # Legacy
             "score_beat": self._approve_beat,
             "match_beat_to_artist": self._match_beat,
@@ -558,6 +559,173 @@ class HubAgent(BaseAgent):
             "total_points": round(total_points, 2),
             "per_producer": per_producer,
             "points_note": "All points from LABEL share — never from artist share",
+        }
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_beat_dna(self, task: AgentTask) -> dict:
+        producer_id = task.payload.get("producer_id")
+        track_ids = task.payload.get("track_ids") or []
+
+        if not producer_id:
+            return {"error": "producer_id required"}
+
+        # Query producer tracks
+        if track_ids:
+            placeholders = ", ".join(f"${i+2}::uuid" for i in range(len(track_ids)))
+            beats = await self.db_fetch(
+                f"""
+                SELECT id, title, bpm, key, genre, mood, quality_score, uniqueness_score
+                FROM hub_beats
+                WHERE producer_id = $1::uuid AND id IN ({placeholders}) AND status != 'rejected'
+                """,
+                producer_id, *track_ids,
+            )
+        else:
+            beats = await self.db_fetch(
+                """
+                SELECT id, title, bpm, key, genre, mood, quality_score, uniqueness_score
+                FROM hub_beats
+                WHERE producer_id = $1::uuid AND status != 'rejected'
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                producer_id,
+            )
+
+        if not beats:
+            return {"error": "No beats found for producer", "producer_id": producer_id}
+
+        # Extract BPM distribution
+        bpms = [float(b["bpm"]) for b in beats if b.get("bpm")]
+        if bpms:
+            avg_bpm = sum(bpms) / len(bpms)
+            bpm_min = min(bpms)
+            bpm_max = max(bpms)
+            dominant_bpm = f"{int(bpm_min)}-{int(bpm_max)} BPM (avg {avg_bpm:.0f})"
+        else:
+            dominant_bpm = "unknown"
+            avg_bpm = 100.0
+
+        # Extract dominant key signatures
+        keys = [b["key"] for b in beats if b.get("key")]
+        key_counts: dict = {}
+        for k in keys:
+            key_counts[k] = key_counts.get(k, 0) + 1
+        dominant_key = max(key_counts, key=lambda x: key_counts[x]) if key_counts else "unknown"
+
+        # Extract genre distribution
+        genres = [b["genre"] for b in beats if b.get("genre")]
+        genre_counts: dict = {}
+        for g in genres:
+            g_lower = g.lower()
+            genre_counts[g_lower] = genre_counts.get(g_lower, 0) + 1
+        dominant_genre = max(genre_counts, key=lambda x: genre_counts[x]) if genre_counts else "unknown"
+
+        # Extract mood distribution
+        moods = [b["mood"] for b in beats if b.get("mood")]
+        mood_counts: dict = {}
+        for m in moods:
+            m_lower = m.lower()
+            mood_counts[m_lower] = mood_counts.get(m_lower, 0) + 1
+        dominant_mood = max(mood_counts, key=lambda x: mood_counts[x]) if mood_counts else "versatile"
+
+        # Style consistency score — how concentrated are genre/mood/BPM?
+        genre_concentration = (max(genre_counts.values()) / len(genres) * 100) if genres else 50
+        mood_concentration = (max(mood_counts.values()) / len(moods) * 100) if moods else 50
+        bpm_spread = (bpm_max - bpm_min) if bpms else 40
+        bpm_consistency = max(0, 100 - bpm_spread * 0.5)
+        consistency_score = int((genre_concentration * 0.4 + mood_concentration * 0.3 + bpm_consistency * 0.3))
+
+        signature_style = f"{dominant_genre.capitalize()} {dominant_mood} beats around {int(avg_bpm)} BPM"
+
+        producer_fingerprint = {
+            "dominant_bpm": dominant_bpm,
+            "dominant_key": dominant_key,
+            "dominant_genre": dominant_genre,
+            "dominant_mood": dominant_mood,
+            "signature_style": signature_style,
+            "consistency_score": min(100, consistency_score),
+            "beats_analyzed": len(beats),
+        }
+
+        # Match producer to artists on roster
+        artists = await self.db_fetch(
+            """
+            SELECT id, name, genre, echo_score
+            FROM artists
+            WHERE status = 'signed'
+            ORDER BY echo_score DESC
+            LIMIT 20
+            """,
+        )
+
+        artist_matches = []
+        for artist in artists:
+            artist_genre = (artist.get("genre") or "").lower()
+            score = 50
+
+            # Genre match
+            if artist_genre == dominant_genre:
+                score += 30
+            elif artist_genre in genre_counts or dominant_genre in artist_genre:
+                score += 15
+
+            # Mood/energy compatibility (inferred from genre)
+            MOOD_GENRE_AFFINITY = {
+                "hip-hop": ["aggressive", "confident", "urban", "dark"],
+                "pop": ["uplifting", "happy", "energetic", "romantic"],
+                "r&b": ["soulful", "smooth", "romantic", "chill"],
+                "electronic": ["euphoric", "driving", "dark", "energetic"],
+                "indie": ["introspective", "dreamy", "chill", "melancholic"],
+            }
+            affinity_moods = MOOD_GENRE_AFFINITY.get(artist_genre, [])
+            if dominant_mood in affinity_moods:
+                score += 15
+
+            # Quality bonus
+            avg_quality = sum(float(b.get("quality_score") or 70) for b in beats) / len(beats)
+            if avg_quality >= 80:
+                score += 5
+
+            artist_matches.append({
+                "artist_id": str(artist["id"]),
+                "name": artist["name"],
+                "genre": artist.get("genre"),
+                "echo_score": artist.get("echo_score"),
+                "compatibility_score": min(100, score),
+            })
+
+        artist_matches.sort(key=lambda x: x["compatibility_score"], reverse=True)
+        top_3 = artist_matches[:3]
+        top_match = top_3[0] if top_3 else {}
+
+        # Collab recommendations (top 3 with explanation)
+        collab_recommendations = []
+        for i, match in enumerate(top_3):
+            reason = (
+                f"Strong genre alignment ({match['genre']} ↔ {dominant_genre}) "
+                f"with {dominant_mood} mood compatibility."
+            )
+            if i == 0:
+                reason += " Highest scoring match — recommend immediate outreach."
+            collab_recommendations.append({
+                "artist_id": match["artist_id"],
+                "artist_name": match["name"],
+                "compatibility_score": match["compatibility_score"],
+                "recommendation": reason,
+            })
+
+        logger.info(f"[Hub] Beat DNA: producer={producer_id}, {len(beats)} beats analyzed, consistency={consistency_score}")
+        return {
+            "producer_id": producer_id,
+            "producer_fingerprint": producer_fingerprint,
+            "artist_matches": artist_matches[:10],
+            "top_match": top_match,
+            "collab_recommendations": collab_recommendations,
+            "hero_skill": "beat_dna",
         }
 
     # ----------------------------------------------------------------

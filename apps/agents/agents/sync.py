@@ -54,6 +54,7 @@ class SyncAgent(BaseAgent):
             "quote_sync_fee": self._quote_sync_fee,
             "clear_sync": self._clear_sync,
             "tag_catalog": self._tag_catalog,
+            "placement_match": self._task_placement_match,
             # legacy
             "tag_for_sync": self._tag_for_sync,
             "pitch_sync": self._pitch_sync,
@@ -361,6 +362,120 @@ class SyncAgent(BaseAgent):
         )
 
         return {"track_id": track_id, "title": track["title"], "tags": tags}
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_placement_match(self, task: AgentTask) -> dict:
+        release_id = task.payload.get("release_id")
+        mood = (task.payload.get("mood") or "").lower()
+        tempo = float(task.payload.get("tempo") or 100)
+        genre = (task.payload.get("genre") or "").lower()
+        instrumental = bool(task.payload.get("instrumental", False))
+
+        # Mood → placement category mapping
+        MOOD_CATEGORIES = {
+            "dark": ["thriller_crime_tv", "horror_film"],
+            "tense": ["thriller_crime_tv", "action_sports"],
+            "uplifting": ["national_tv_ad", "sports_broadcast"],
+            "romantic": ["drama_series", "rom_com_film"],
+            "melancholic": ["drama_series", "indie_film"],
+            "energetic": ["action_sports", "national_tv_ad"],
+            "chill": ["lifestyle_digital_ad", "documentary"],
+            "epic": ["trailer", "action_sports"],
+            "happy": ["national_tv_ad", "lifestyle_digital_ad"],
+            "aggressive": ["action_sports", "video_game"],
+        }
+
+        # Tempo → category fit scores
+        def tempo_score(cat: str, bpm: float) -> int:
+            if bpm < 80:  # slow → cinematic/drama
+                return 90 if cat in ("drama_series", "indie_film", "documentary") else 50
+            elif bpm <= 120:  # mid → general TV
+                return 85 if cat in ("drama_series", "lifestyle_digital_ad", "national_tv_ad") else 65
+            else:  # fast → action/sports
+                return 90 if cat in ("action_sports", "trailer", "video_game") else 50
+
+        # Genre → category fit scores
+        GENRE_FIT = {
+            "hip-hop":    {"action_sports": 85, "national_tv_ad": 70, "video_game": 80, "trailer": 60},
+            "pop":        {"national_tv_ad": 90, "lifestyle_digital_ad": 85, "rom_com_film": 80},
+            "r&b":        {"drama_series": 85, "rom_com_film": 90, "lifestyle_digital_ad": 75},
+            "electronic": {"video_game": 90, "trailer": 85, "action_sports": 80, "national_tv_ad": 70},
+            "indie":      {"indie_film": 90, "drama_series": 80, "documentary": 85, "lifestyle_digital_ad": 70},
+            "classical":  {"documentary": 90, "drama_series": 85, "indie_film": 80, "trailer": 70},
+            "rock":       {"trailer": 90, "action_sports": 85, "video_game": 80},
+            "country":    {"national_tv_ad": 75, "lifestyle_digital_ad": 80, "drama_series": 65},
+        }
+
+        ALL_CATEGORIES = [
+            "national_tv_ad", "drama_series", "action_sports", "indie_film",
+            "trailer", "video_game", "lifestyle_digital_ad", "documentary",
+            "thriller_crime_tv", "rom_com_film",
+        ]
+
+        FEE_RANGES = {
+            "national_tv_ad": "national TV ad: $10,000-50,000",
+            "drama_series": "streaming drama series: $5,000-30,000",
+            "action_sports": "sports/action broadcast: $3,000-20,000",
+            "indie_film": "indie film: $500-2,000",
+            "trailer": "theatrical trailer: $15,000-75,000",
+            "video_game": "video game: $5,000-25,000",
+            "lifestyle_digital_ad": "digital/social ad: $2,000-10,000",
+            "documentary": "documentary: $1,500-8,000",
+            "thriller_crime_tv": "thriller/crime TV: $4,000-20,000",
+            "rom_com_film": "rom-com/drama film: $2,000-10,000",
+        }
+
+        PITCH_CONTACTS = {
+            "national_tv_ad": ["Jamie Chen @ Adwave Music", "Brand Music Group"],
+            "drama_series": ["Morgan Ellis @ Netflix Music Licensing", "Alex Rivera @ Beats & Screens"],
+            "action_sports": ["ESPN Music Licensing", "Red Bull Media"],
+            "indie_film": ["Drew Nakamura @ Filmtracks Agency", "Sundance Music"],
+            "trailer": ["Trailerhead Music", "Position Music"],
+            "video_game": ["Sam Torres @ Level Up Audio", "EA Music"],
+            "lifestyle_digital_ad": ["Jamie Chen @ Adwave Music", "Vibe Creative"],
+            "documentary": ["Morgan Ellis @ Netflix Music Licensing", "PBS Music"],
+            "thriller_crime_tv": ["Alex Rivera @ Beats & Screens", "FX Music"],
+            "rom_com_film": ["Drew Nakamura @ Filmtracks Agency", "Hallmark Music"],
+        }
+
+        # Score each category
+        mood_boosts = set(MOOD_CATEGORIES.get(mood, []))
+        genre_fits = GENRE_FIT.get(genre, {})
+        scores = {}
+
+        for cat in ALL_CATEGORIES:
+            base = 40
+            base += tempo_score(cat, tempo) * 0.3
+            base += genre_fits.get(cat, 50) * 0.3
+            if cat in mood_boosts:
+                base += 20
+            if instrumental:
+                base += 20  # +20 pts bonus
+            scores[cat] = min(100, round(base))
+
+        top_5 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        best_cat = top_5[0][0]
+        match_score = top_5[0][1]
+
+        licensing_rec = (
+            "Strong sync candidate — prioritize one-stop clearance pitch to music supervisors."
+            if match_score >= 75
+            else "Moderate sync potential — target niche placements and digital ads first."
+        )
+
+        return {
+            "release_id": release_id,
+            "top_categories": [{"category": c, "score": s, "estimated_fee": FEE_RANGES[c]} for c, s in top_5],
+            "match_score": match_score,
+            "pitch_targets": PITCH_CONTACTS.get(best_cat, []),
+            "licensing_recommendation": licensing_rec,
+            "estimated_sync_fee": FEE_RANGES[best_cat],
+            "hero_skill": "placement_matchmaker",
+        }
 
     # ----------------------------------------------------------------
     # Legacy handlers
