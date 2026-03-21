@@ -36,6 +36,7 @@ class FinanceAgent(BaseAgent):
             "check_cash_position": self._task_check_cash_position,
             "reconcile_distributor_payment": self._task_reconcile_distributor_payment,
             "calculate_point_holder_payouts": self._task_calculate_point_holder_payouts,
+            "royalty_audit": self._task_royalty_audit,
             # Legacy handlers
             "process_royalties": self._task_process_royalties,
             "distribute_royalties": self._task_distribute_royalties,
@@ -610,6 +611,150 @@ class FinanceAgent(BaseAgent):
                 "total_distributed": float(total_distributed),
                 "holders_paid": len(payouts),
                 "holders_below_threshold": len(holders) - len(payouts),
+            },
+        )
+
+    # ----------------------------------------------------------------
+    # Hero skill: Royalty Auditor
+    # ----------------------------------------------------------------
+
+    # DSP per-stream rate ranges (USD)
+    _DSP_RATES = {
+        "spotify":       {"min": 0.003, "max": 0.005},
+        "apple_music":   {"min": 0.007, "max": 0.010},
+        "youtube_music": {"min": 0.001, "max": 0.002},
+        "amazon_music":  {"min": 0.004, "max": 0.006},
+        "tidal":         {"min": 0.009, "max": 0.013},
+    }
+
+    # Estimated platform market-share for distributing total streams when no per-DSP breakdown exists
+    _DSP_MARKET_SHARE = {
+        "spotify": 0.31,
+        "apple_music": 0.15,
+        "youtube_music": 0.22,
+        "amazon_music": 0.13,
+        "tidal": 0.04,
+    }
+
+    def _parse_audit_period(self, period: str):
+        """Parse 'YYYY-QN' or 'YYYY-MM' to (start_date, end_date)."""
+        from datetime import date as _date
+        if "-Q" in period:
+            year_str, q_str = period.split("-Q")
+            year, q = int(year_str), int(q_str)
+            q_starts = {1: (1, 1), 2: (4, 1), 3: (7, 1), 4: (10, 1)}
+            q_ends   = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
+            return _date(year, *q_starts[q]), _date(year, *q_ends[q])
+        # Fallback: treat as ISO date range (single month)
+        try:
+            start = _date.fromisoformat(period + "-01")
+            import calendar
+            last = calendar.monthrange(start.year, start.month)[1]
+            return start, _date(start.year, start.month, last)
+        except Exception:
+            today = date.today()
+            return today.replace(day=1), today
+
+    async def _task_royalty_audit(self, task: AgentTask) -> AgentResult:
+        """
+        Royalty Auditor hero skill.
+        Compares actual DSP royalty payments against expected rates from stream counts.
+        Flags underpayments > 15% below expected minimum.
+        """
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        period = task.payload.get("period", "")
+        if not artist_id:
+            return AgentResult(
+                success=False, task_id=task.task_id, agent_id=self.agent_id,
+                error="artist_id required",
+            )
+
+        period_start, period_end = self._parse_audit_period(period)
+
+        # 1. Actual royalties collected per platform in the period
+        royalty_rows = await self.db_fetch(
+            """
+            SELECT platform,
+                   COALESCE(SUM(net_amount), 0) AS actual_amount
+            FROM royalties
+            WHERE artist_id = $1::uuid
+              AND (period_start IS NULL OR period_start >= $2)
+              AND (period_end   IS NULL OR period_end   <= $3)
+            GROUP BY platform
+            """,
+            artist_id, period_start, period_end,
+        )
+
+        # 2. Total streams across all tracks for this artist (best available proxy)
+        streams_row = await self.db_fetchrow(
+            """
+            SELECT COALESCE(SUM(t.streams_total), 0) AS total_streams
+            FROM tracks t
+            JOIN releases r ON t.release_id = r.id
+            WHERE r.artist_id = $1::uuid
+            """,
+            artist_id,
+        )
+        total_streams = int(streams_row["total_streams"]) if streams_row else 0
+
+        # Build actual amounts map (normalise platform names)
+        actuals: dict[str, float] = {}
+        for row in royalty_rows:
+            platform = (row["platform"] or "").lower().replace(" ", "_").replace("-", "_")
+            actuals[platform] = float(row["actual_amount"])
+
+        total_actual = sum(actuals.values())
+        discrepancies = []
+        total_expected_min = 0.0
+        recovery_potential = 0.0
+
+        for dsp, rates in self._DSP_RATES.items():
+            # Estimate streams for this DSP from market-share distribution
+            dsp_share = self._DSP_MARKET_SHARE.get(dsp, 0.0)
+            estimated_streams = total_streams * dsp_share
+
+            expected_min = estimated_streams * rates["min"]
+            expected_max = estimated_streams * rates["max"]
+            total_expected_min += expected_min
+
+            actual = actuals.get(dsp, 0.0)
+            threshold = expected_min * 0.85
+
+            if estimated_streams > 0 and actual < threshold:
+                gap = expected_min - actual
+                recovery_potential += gap
+                discrepancies.append({
+                    "dsp": dsp,
+                    "estimated_streams": int(estimated_streams),
+                    "expected_min": round(expected_min, 2),
+                    "expected_max": round(expected_max, 2),
+                    "actual_received": round(actual, 2),
+                    "shortfall": round(gap, 2),
+                    "flag": "UNDERPAYMENT DETECTED",
+                })
+
+        audit_status = "discrepancies_found" if discrepancies else "clean"
+
+        await self.log_audit(
+            "royalty_audit", "royalties", None,
+            {"artist_id": artist_id, "period": period, "status": audit_status,
+             "discrepancies": len(discrepancies)},
+        )
+
+        return AgentResult(
+            success=True,
+            task_id=task.task_id,
+            agent_id=self.agent_id,
+            result={
+                "audit_status": audit_status,
+                "period": period,
+                "artist_id": artist_id,
+                "total_streams_on_record": total_streams,
+                "total_expected_min": round(total_expected_min, 2),
+                "total_actual": round(total_actual, 2),
+                "discrepancies": discrepancies,
+                "recovery_potential": round(recovery_potential, 2),
+                "hero_skill": "royalty_auditor",
             },
         )
 

@@ -60,6 +60,7 @@ class MarketingAgent(BaseAgent):
             "generate_ad_copy": self._generate_ad_copy,
             "calculate_roas": self._calculate_roas,
             "apply_marketing_budget": self._apply_marketing_budget,
+            "roas_forecast": self._task_roas_forecast,
             # legacy
             "plan_campaign": self._create_campaign,
             "pitch_playlists": self._submit_playlists,
@@ -320,6 +321,135 @@ class MarketingAgent(BaseAgent):
             "channel_budgets": channel_budgets,
             "rule": "80% of point sales revenue allocated to marketing",
         }
+
+    # ----------------------------------------------------------------
+    # Hero skill: ROAS Oracle
+    # ----------------------------------------------------------------
+
+    # Platform benchmarks: (cpm_min, cpm_max, ctr_min, ctr_max)
+    _PLATFORM_BENCHMARKS = {
+        "meta":    {"cpm_min": 0.50, "cpm_max": 2.00, "ctr_min": 0.01, "ctr_max": 0.03},
+        "tiktok":  {"cpm_min": 1.00, "cpm_max": 3.00, "ctr_min": 0.02, "ctr_max": 0.05},
+        "youtube": {"cpm_min": 2.00, "cpm_max": 5.00, "ctr_min": 0.005, "ctr_max": 0.015},
+        "spotify": {"cpm_min": None,  "cpm_max": None,  "ctr_min": None,  "ctr_max": None,
+                    "cost_per_stream_min": 0.015, "cost_per_stream_max": 0.025},
+    }
+
+    # Avg stream payout rate used for ROAS estimate
+    _AVG_STREAM_RATE = 0.004  # USD
+
+    async def _task_roas_forecast(self, task: AgentTask) -> AgentResult:
+        """
+        ROAS Oracle hero skill.
+        Projects campaign outcomes using industry benchmark CPM/CTR data.
+        """
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        budget = float(task.payload.get("budget", 0.0))
+        campaign_type = task.payload.get("campaign_type", "release_promo")
+        platform = task.payload.get("platform", "meta").lower()
+
+        if budget <= 0:
+            return AgentResult(
+                success=False, task_id=task.task_id, agent_id=self.agent_id,
+                error="budget must be > 0",
+            )
+
+        benchmarks = self._PLATFORM_BENCHMARKS.get(platform, self._PLATFORM_BENCHMARKS["meta"])
+
+        # Spotify audio ads: different model
+        if platform == "spotify" and benchmarks.get("cost_per_stream_min"):
+            cps_mid = (benchmarks["cost_per_stream_min"] + benchmarks["cost_per_stream_max"]) / 2
+            estimated_streams = int(budget / cps_mid)
+            estimated_reach = estimated_streams * 3  # rough listener-to-stream ratio
+            estimated_clicks = int(estimated_streams * 0.15)
+            estimated_new_fans = int(estimated_clicks * 0.05)
+        else:
+            # CPM-based model
+            cpm_mid = (benchmarks["cpm_min"] + benchmarks["cpm_max"]) / 2
+            ctr_mid = (benchmarks["ctr_min"] + benchmarks["ctr_max"]) / 2
+            estimated_reach = int(budget / cpm_mid * 1000)
+            estimated_clicks = int(estimated_reach * ctr_mid)
+            estimated_streams = int(estimated_clicks * 0.30)
+            estimated_new_fans = int(estimated_clicks * 0.05)
+
+        # Projected ROAS = stream revenue / spend
+        stream_revenue = estimated_streams * self._AVG_STREAM_RATE
+        projected_roas = round(stream_revenue / budget, 3) if budget > 0 else 0.0
+
+        # Budget recommendation
+        if platform == "spotify":
+            meaningful_min = 500
+            diminishing_max = 5000
+        elif platform == "tiktok":
+            meaningful_min = 200
+            diminishing_max = 3000
+        elif platform == "youtube":
+            meaningful_min = 300
+            diminishing_max = 5000
+        else:  # meta
+            meaningful_min = 300
+            diminishing_max = 5000
+
+        if budget < meaningful_min:
+            budget_recommendation = f"Increase to ${meaningful_min:,} for meaningful impact on {platform.title()}"
+        elif budget > diminishing_max:
+            budget_recommendation = f"Diminishing returns above ${diminishing_max:,} — consider spreading across platforms"
+        else:
+            budget_recommendation = f"${budget:,.0f} is in the optimal range for {platform.title()} music campaigns"
+
+        # Risk level
+        # Artists with <10k streams = higher risk; established = lower risk
+        artist_streams = 0
+        if artist_id:
+            streams_row = await self.db_fetchrow(
+                """
+                SELECT COALESCE(SUM(t.streams_total), 0) AS total
+                FROM tracks t
+                JOIN releases r ON t.release_id = r.id
+                WHERE r.artist_id = $1::uuid
+                """,
+                artist_id,
+            )
+            artist_streams = int(streams_row["total"]) if streams_row else 0
+
+        if artist_streams > 100_000:
+            artist_stage = "established"
+        elif artist_streams > 10_000:
+            artist_stage = "developing"
+        else:
+            artist_stage = "emerging"
+
+        high_risk_combos = {("emerging", "brand_awareness"), ("emerging", "social_growth")}
+        low_risk_combos = {("established", "release_promo"), ("developing", "release_promo")}
+
+        if (artist_stage, campaign_type) in high_risk_combos or budget > diminishing_max:
+            risk_level = "high"
+        elif (artist_stage, campaign_type) in low_risk_combos and budget <= diminishing_max:
+            risk_level = "low"
+        else:
+            risk_level = "medium"
+
+        return AgentResult(
+            success=True,
+            task_id=task.task_id,
+            agent_id=self.agent_id,
+            result={
+                "projected_roas": projected_roas,
+                "estimated_reach": estimated_reach,
+                "estimated_streams": estimated_streams,
+                "estimated_new_fans": estimated_new_fans,
+                "budget": budget,
+                "platform": platform,
+                "campaign_type": campaign_type,
+                "artist_stage": artist_stage,
+                "budget_recommendation": budget_recommendation,
+                "risk_level": risk_level,
+                "benchmarks_used": {
+                    k: v for k, v in benchmarks.items() if v is not None
+                },
+                "hero_skill": "roas_oracle",
+            },
+        )
 
     # ----------------------------------------------------------------
     # Legacy handlers

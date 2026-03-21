@@ -7,6 +7,7 @@ tracks rights ownership, and enforces GDPR, FATF, Berne Convention standards.
 TEMPLATE ONLY — Not legal advice. Review with qualified counsel in each jurisdiction.
 """
 import logging
+import os
 import re
 import uuid
 from datetime import datetime, timezone, date, timedelta
@@ -212,6 +213,7 @@ class LegalAgent(BaseAgent):
             "verify_point_language": self._task_verify_point_language,
             "gdpr_check": self._task_gdpr_check,
             "kyc_check": self._task_kyc_check,
+            "contract_shield": self._task_contract_shield,
             # Legacy
             "draft_contract": self._task_generate_contract,
             "review_contracts": self._task_review_contracts,
@@ -952,6 +954,235 @@ class LegalAgent(BaseAgent):
         return AgentResult(
             success=True, task_id=task.task_id, agent_id=self.agent_id,
             result={"contract_id": contract_id, "envelope_id": envelope_id, "status": "sent_for_signature"},
+        )
+
+    # ----------------------------------------------------------------
+    # Hero skill: Contract Shield
+    # ----------------------------------------------------------------
+
+    # Predatory clause patterns for keyword-based fallback scan
+    _PREDATORY_PATTERNS = {
+        "rights_grab": {
+            "keywords": ["perpetual", "worldwide", "irrevocable", "all rights", "in perpetuity"],
+            "reversion_keywords": ["reversion", "revert", "reversion clause"],
+            "description": "Perpetual/worldwide rights without reversion clause",
+            "severity": "critical",
+        },
+        "360_deal": {
+            "keywords": ["360", "live performance", "merchandise", "endorsement", "sponsorship",
+                         "touring", "brand deal"],
+            "label_cut_keywords": ["percentage", "percent", "%", "share", "portion"],
+            "description": "Label taking percentage of non-recording revenue (360 deal)",
+            "severity": "high",
+        },
+        "unconscionable_term": {
+            "keywords": ["years", "albums", "lp", "album option", "option period"],
+            "description": "Unreasonable contract length (>7 years or >5 album commitment)",
+            "severity": "high",
+        },
+        "low_royalty_rate": {
+            "keywords": ["royalty", "royalties", "net receipts", "net sales"],
+            "description": "Royalty rate below market standard (<15% recording / <75% publishing net)",
+            "severity": "high",
+        },
+        "no_audit_rights": {
+            "keywords": ["audit", "accounting", "inspection", "examine"],
+            "description": "Missing audit rights clause",
+            "severity": "medium",
+        },
+        "unilateral_changes": {
+            "keywords": ["sole discretion", "without consent", "unilaterally", "may modify",
+                         "reserves the right to change"],
+            "description": "Label can change terms without artist consent",
+            "severity": "high",
+        },
+        "no_exit_clause": {
+            "keywords": ["termination", "terminate", "exit", "release from"],
+            "description": "No exit clause if label fails to perform",
+            "severity": "medium",
+        },
+    }
+
+    _CONTRACT_GRADE_THRESHOLDS = {
+        "A": (0, 1),   # 0-1 flags
+        "B": (2, 2),   # 2 flags
+        "C": (3, 3),   # 3 flags
+        "D": (4, 99),  # 4+ flags
+    }
+
+    def _keyword_scan_contract(self, contract_text: str, contract_type: str) -> list[dict]:
+        """Keyword-based contract scan used as fallback when no Claude key is available."""
+        text_lower = contract_text.lower()
+        flags = []
+
+        # Rights grab: look for perpetual/worldwide without reversion
+        p = self._PREDATORY_PATTERNS["rights_grab"]
+        has_perpetual = any(k in text_lower for k in p["keywords"])
+        has_reversion = any(k in text_lower for k in p["reversion_keywords"])
+        if has_perpetual and not has_reversion:
+            flags.append({"flag": "rights_grab", "description": p["description"], "severity": p["severity"]})
+
+        # 360 deal
+        p = self._PREDATORY_PATTERNS["360_deal"]
+        has_360_scope = any(k in text_lower for k in p["keywords"])
+        has_cut = any(k in text_lower for k in p["label_cut_keywords"])
+        if has_360_scope and has_cut:
+            flags.append({"flag": "360_deal", "description": p["description"], "severity": p["severity"]})
+
+        # Term length — look for numbers > 7 near "year" or > 5 near "album"
+        year_matches = re.findall(r'(\d+)\s*(?:-\s*)?year', text_lower)
+        album_matches = re.findall(r'(\d+)\s*(?:-\s*)?album', text_lower)
+        if any(int(y) > 7 for y in year_matches) or any(int(a) > 5 for a in album_matches):
+            p = self._PREDATORY_PATTERNS["unconscionable_term"]
+            flags.append({"flag": "unconscionable_term", "description": p["description"], "severity": p["severity"]})
+
+        # Low royalty rate
+        royalty_pct_matches = re.findall(r'(\d+(?:\.\d+)?)\s*%', text_lower)
+        if royalty_pct_matches:
+            rates = [float(r) for r in royalty_pct_matches]
+            if contract_type in ("recording", "distribution") and any(r < 15 for r in rates):
+                p = self._PREDATORY_PATTERNS["low_royalty_rate"]
+                flags.append({"flag": "low_royalty_rate",
+                               "description": f"{p['description']} — found rates: {rates[:5]}",
+                               "severity": p["severity"]})
+            elif contract_type == "publishing" and any(r < 75 for r in rates):
+                p = self._PREDATORY_PATTERNS["low_royalty_rate"]
+                flags.append({"flag": "low_royalty_rate",
+                               "description": f"{p['description']} — found rates: {rates[:5]}",
+                               "severity": p["severity"]})
+
+        # No audit rights
+        p = self._PREDATORY_PATTERNS["no_audit_rights"]
+        if not any(k in text_lower for k in p["keywords"]):
+            flags.append({"flag": "no_audit_rights", "description": p["description"], "severity": p["severity"]})
+
+        # Unilateral changes
+        p = self._PREDATORY_PATTERNS["unilateral_changes"]
+        if any(k in text_lower for k in p["keywords"]):
+            flags.append({"flag": "unilateral_changes", "description": p["description"], "severity": p["severity"]})
+
+        # No exit clause
+        p = self._PREDATORY_PATTERNS["no_exit_clause"]
+        if not any(k in text_lower for k in p["keywords"]):
+            flags.append({"flag": "no_exit_clause", "description": p["description"], "severity": p["severity"]})
+
+        return flags
+
+    def _grade_contract(self, flags: list[dict]) -> str:
+        # Automatic F if rights grab is present
+        if any(f["flag"] == "rights_grab" for f in flags):
+            return "F"
+        n = len(flags)
+        if n <= 1:
+            return "A"
+        if n == 2:
+            return "B"
+        if n == 3:
+            return "C"
+        return "D"
+
+    async def _task_contract_shield(self, task: AgentTask) -> AgentResult:
+        """
+        Contract Shield hero skill.
+        Scans contract text for predatory clauses and grades the contract.
+        Uses Claude AI when available; falls back to keyword analysis.
+        """
+        contract_text = task.payload.get("contract_text", "")
+        contract_type = task.payload.get("contract_type", "recording")
+
+        if not contract_text:
+            return AgentResult(
+                success=False, task_id=task.task_id, agent_id=self.agent_id,
+                error="contract_text required",
+            )
+
+        flags: list[dict] = []
+        analysis_method = "keyword"
+
+        # Try Claude first
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if api_key:
+            try:
+                from anthropic import AsyncAnthropic
+                client = AsyncAnthropic(api_key=api_key)
+
+                system_prompt = (
+                    "You are a music industry contract lawyer. Analyze the provided contract text "
+                    "for predatory clauses. Return a JSON object with a 'flags' array. "
+                    "Each flag must have: flag (string key), description (plain English), severity (critical/high/medium/low). "
+                    "Check for: rights_grab (perpetual/worldwide without reversion), 360_deal (label takes % of live/merch/endorsements), "
+                    "unconscionable_term (>7 years or >5 album commitment), low_royalty_rate (<15% recording or <75% publishing net), "
+                    "no_audit_rights (missing audit clause), unilateral_changes (label can change terms unilaterally), "
+                    "no_exit_clause (no exit if label fails to perform). "
+                    "Respond ONLY with valid JSON, no markdown."
+                )
+
+                response = await client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=1024,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Contract type: {contract_type}\n\n"
+                                f"CONTRACT TEXT:\n{contract_text[:12000]}\n\n"
+                                "Return JSON: {\"flags\": [{\"flag\": ..., \"description\": ..., \"severity\": ...}]}"
+                            ),
+                        }
+                    ],
+                    system=system_prompt,
+                )
+
+                import json as _json
+                raw = response.content[0].text.strip()
+                parsed = _json.loads(raw)
+                flags = parsed.get("flags", [])
+                analysis_method = "claude"
+            except Exception as e:
+                logger.warning(f"[Legal] Contract Shield Claude analysis failed: {e}. Falling back to keyword scan.")
+                flags = self._keyword_scan_contract(contract_text, contract_type)
+        else:
+            flags = self._keyword_scan_contract(contract_text, contract_type)
+
+        grade = self._grade_contract(flags)
+        flag_count = len(flags)
+
+        grade_summaries = {
+            "A": "Contract looks fair — minimal red flags. Review with counsel before signing.",
+            "B": "Contract has some concerning clauses — negotiate before signing.",
+            "C": "Contract has multiple problematic clauses — significant negotiation required.",
+            "D": "Contract is highly predatory — do not sign without major revisions and legal counsel.",
+            "F": "Contract contains a rights grab — this is an unacceptable rights transfer. Do not sign.",
+        }
+
+        recommendations = {
+            "A": "Proceed with standard legal review. Minor cleanup may be needed.",
+            "B": "Request amendments on flagged clauses before proceeding.",
+            "C": "Require substantial redrafting. Consult a music industry attorney.",
+            "D": "This contract is artist-hostile. Engage an entertainment lawyer immediately.",
+            "F": "Walk away or fully redraft. A perpetual rights grab without reversion is non-negotiable.",
+        }
+
+        await self.log_audit(
+            "contract_shield", "contracts", None,
+            {"contract_type": contract_type, "grade": grade, "flags": flag_count,
+             "method": analysis_method},
+        )
+
+        return AgentResult(
+            success=True,
+            task_id=task.task_id,
+            agent_id=self.agent_id,
+            result={
+                "grade": grade,
+                "flags": flags,
+                "flag_count": flag_count,
+                "summary": grade_summaries[grade],
+                "recommendation": recommendations[grade],
+                "contract_type": contract_type,
+                "analysis_method": analysis_method,
+                "hero_skill": "contract_shield",
+            },
         )
 
     async def _task_default(self, task: AgentTask) -> AgentResult:

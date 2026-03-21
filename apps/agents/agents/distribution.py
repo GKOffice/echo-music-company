@@ -42,9 +42,232 @@ class DistributionAgent(BaseAgent):
             "setup_content_id": self._task_setup_content_id,
             "create_presave_link": self._task_create_presave_link,
             "schedule_release": self._task_schedule_release,
+            "playlist_pitch": self._task_playlist_pitch,
         }
         handler = handlers.get(task.task_type, self._task_default)
         return await handler(task)
+
+    # ----------------------------------------------------------------
+    # Hero skill: Playlist Infiltrator
+    # ----------------------------------------------------------------
+
+    # Genre → editorial playlist category mapping
+    _GENRE_PLAYLIST_MAP = {
+        "hip-hop":      ["RapCaviar", "Most Necessary", "Get Turnt", "Rap Life", "Feelin' Myself"],
+        "pop":          ["Today's Top Hits", "Pop Rising", "New Music Friday", "mint", "Teen Party"],
+        "r&b":          ["Are & Be", "R&B Only", "Soul", "Chill R&B", "Late Night R&B"],
+        "electronic":   ["Electronic Rising", "Brain Food", "Electro-Mania", "Ambient Relaxation", "Dance Rising"],
+        "indie":        ["Fresh Finds", "Indie Pop", "The Indie List", "Lorem", "All New Indie"],
+        "rock":         ["Rock This", "All New Rock", "New Noise", "Pumped Pop", "Hard Rock Café"],
+        "latin":        ["Baila Reggaeton", "Latin Pop Rising", "Viva Latino", "Tropical Morning"],
+        "country":      ["Hot Country", "New Boots", "Country Gold", "Country Coffeehouse"],
+        "jazz":         ["Jazz Classics", "Jazz X-Press", "Smooth Jazz", "Late Night Jazz"],
+        "classical":    ["Classical New Releases", "Peaceful Piano", "Classical Focus", "Instrumental Study"],
+        "default":      ["New Music Friday", "Fresh Finds", "Lorem", "Discover Weekly", "Release Radar"],
+    }
+
+    # Required metadata fields for Spotify editorial pitches
+    _METADATA_FIELDS = [
+        ("title", "Release title"),
+        ("genre", "Genre"),
+        ("release_date", "Release date (YYYY-MM-DD)"),
+        ("artwork_url", "Cover artwork (3000×3000 px JPG/PNG)"),
+        ("master_audio_url", "Master audio file"),
+        ("upc", "UPC barcode"),
+        ("isrc", "ISRC per track"),
+        ("mood", "Mood/vibe descriptor"),
+    ]
+
+    async def _task_playlist_pitch(self, task: AgentTask) -> AgentResult:
+        """
+        Playlist Infiltrator hero skill.
+        Builds a targeted editorial playlist pitch strategy for a release.
+        Calculates pitch score, optimal pitch date, target playlists, and a ready-to-send pitch template.
+        """
+        release_id = task.payload.get("release_id") or task.release_id
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        genre = task.payload.get("genre", "").lower()
+        mood = task.payload.get("mood", "")
+        tempo = task.payload.get("tempo", "")
+
+        release = None
+        if release_id:
+            release = await self.db_fetchrow(
+                """
+                SELECT r.title, r.release_date, r.genre, r.artwork_url,
+                       r.master_audio_url, r.upc, r.status, r.metadata,
+                       a.name as artist_name, a.stage_name, a.bio
+                FROM releases r
+                LEFT JOIN artists a ON r.artist_id = a.id
+                WHERE r.id = $1::uuid
+                """,
+                release_id,
+            )
+
+        if release:
+            genre = genre or (release.get("genre") or "default").lower()
+
+        artist_name = ""
+        if release:
+            artist_name = release.get("stage_name") or release.get("artist_name") or ""
+        if not artist_name and artist_id:
+            artist_row = await self.db_fetchrow(
+                "SELECT name, stage_name FROM artists WHERE id = $1::uuid", artist_id
+            )
+            if artist_row:
+                artist_name = artist_row.get("stage_name") or artist_row.get("name") or ""
+
+        release_title = release.get("title", "Untitled") if release else "Untitled"
+        release_date = release.get("release_date") if release else None
+        artist_bio = (release.get("bio") or f"{artist_name} is an emerging artist on Melodio.") if release else ""
+
+        # Optimal pitch date: 7 days before release (Spotify editorial requirement)
+        optimal_pitch_date = None
+        if release_date:
+            from datetime import date as _date
+            if isinstance(release_date, str):
+                release_date = _date.fromisoformat(release_date)
+            pitch_dt = release_date - timedelta(days=7)
+            optimal_pitch_date = pitch_dt.isoformat()
+
+        # Pitch score 0-100
+        score = 0
+        score_breakdown = {}
+
+        # Release quality (30 pts): has artwork + audio
+        rq = 0
+        if release and release.get("artwork_url"):
+            rq += 15
+        if release and release.get("master_audio_url"):
+            rq += 15
+        score_breakdown["release_quality"] = rq
+        score += rq
+
+        # Metadata completeness (40 pts)
+        mc = 0
+        if release and release.get("title"):
+            mc += 8
+        if genre and genre != "default":
+            mc += 8
+        if release and release.get("upc"):
+            mc += 8
+        if mood:
+            mc += 8
+        if tempo:
+            mc += 8
+        score_breakdown["metadata_completeness"] = mc
+        score += mc
+
+        # Artist momentum (30 pts): check streams_total and prior releases
+        am = 0
+        if artist_id:
+            streams_row = await self.db_fetchrow(
+                """
+                SELECT COALESCE(SUM(t.streams_total), 0) AS total
+                FROM tracks t
+                JOIN releases r ON t.release_id = r.id
+                WHERE r.artist_id = $1::uuid
+                """,
+                artist_id,
+            )
+            total_streams = int(streams_row["total"]) if streams_row else 0
+            if total_streams > 100_000:
+                am = 30
+            elif total_streams > 10_000:
+                am = 20
+            elif total_streams > 1_000:
+                am = 10
+            else:
+                am = 5
+        score_breakdown["artist_momentum"] = am
+        score += am
+
+        pitch_score = min(score, 100)
+
+        # Target playlists ranked by fit
+        playlists = self._GENRE_PLAYLIST_MAP.get(genre, self._GENRE_PLAYLIST_MAP["default"])
+        if mood:
+            # Boost mood-aligned playlists by adding mood keyword to fit description
+            mood_lower = mood.lower()
+            playlists = playlists[:5]  # cap at 5
+        target_playlists = []
+        for i, pl in enumerate(playlists[:5]):
+            fit_score = max(100 - i * 12, 40)
+            target_playlists.append({
+                "playlist": pl,
+                "platform": "spotify",
+                "fit_score": fit_score,
+                "genre_match": genre,
+            })
+
+        # Metadata checklist
+        metadata_checklist = []
+        track_isrc = None
+        if release_id:
+            track_row = await self.db_fetchrow(
+                "SELECT isrc FROM tracks WHERE release_id = $1::uuid LIMIT 1", release_id
+            )
+            track_isrc = track_row.get("isrc") if track_row else None
+
+        for field_key, field_label in self._METADATA_FIELDS:
+            if field_key == "isrc":
+                complete = bool(track_isrc)
+            elif field_key == "mood":
+                complete = bool(mood)
+            elif release:
+                complete = bool(release.get(field_key))
+            else:
+                complete = False
+            metadata_checklist.append({
+                "field": field_label,
+                "complete": complete,
+                "status": "✓" if complete else "MISSING",
+            })
+
+        # Build pitch template
+        release_date_str = str(release_date) if release_date else "TBD"
+        pitch_template = (
+            f"EDITORIAL PLAYLIST PITCH\n"
+            f"Artist: {artist_name}\n"
+            f"Track: {release_title}\n"
+            f"Genre: {genre.title()}" + (f" | Mood: {mood}" if mood else "") + (f" | Tempo: {tempo}" if tempo else "") + "\n"
+            f"Release Date: {release_date_str}\n\n"
+            f"About the Artist:\n{artist_bio}\n\n"
+            f"Why This Track Belongs on Your Playlist:\n"
+            f'"{release_title}" by {artist_name} is a {genre}-driven track built for discovery. '
+        )
+        if pitch_score >= 70:
+            pitch_template += (
+                f"With strong streaming momentum and polished production, this release is primed for editorial placement. "
+                f"We believe it\'s a natural fit for {target_playlists[0]['playlist'] if target_playlists else 'your playlist'} "
+                f"and would resonate strongly with your listeners."
+            )
+        else:
+            pitch_template += (
+                f"This is a fresh voice ready for a wider audience. "
+                f"We\'d love your consideration for {target_playlists[0]['playlist'] if target_playlists else 'your playlist'}."
+            )
+        pitch_template += (
+            f"\n\nStreaming Link: [Available at release]\n"
+            f"Label: Melodio | melodio.io\n"
+            f"Contact: artists@melodio.io"
+        )
+
+        return AgentResult(
+            success=True,
+            task_id=task.task_id,
+            agent_id=self.agent_id,
+            result={
+                "pitch_score": pitch_score,
+                "score_breakdown": score_breakdown,
+                "optimal_pitch_date": optimal_pitch_date,
+                "target_playlists": target_playlists,
+                "pitch_template": pitch_template,
+                "metadata_checklist": metadata_checklist,
+                "genre": genre,
+                "hero_skill": "playlist_infiltrator",
+            },
+        )
 
     async def _task_default(self, task: AgentTask) -> AgentResult:
         return AgentResult(
