@@ -1,0 +1,87 @@
+{
+  "generated_at": "2026-03-21T01:14:34.340857+00:00",
+  "score": "8/16",
+  "readiness_pct": 50,
+  "services": {
+    "docker": {
+      "connected": true,
+      "detail": "5 containers running",
+      "checked_at": "2026-03-21T01:14:32.876962+00:00"
+    },
+    "redis": {
+      "connected": true,
+      "detail": "Redis 8.6.1",
+      "checked_at": "2026-03-21T01:14:33.068547+00:00"
+    },
+    "postgres": {
+      "connected": true,
+      "detail": "PostgreSQL 15.16 (Homebrew) on aarch64-apple-darwin24.6.0",
+      "checked_at": "2026-03-21T01:14:33.088615+00:00"
+    },
+    "local_api": {
+      "connected": true,
+      "detail": "running",
+      "checked_at": "2026-03-21T01:14:33.091154+00:00"
+    },
+    "local_web": {
+      "connected": true,
+      "detail": "running",
+      "checked_at": "2026-03-21T01:14:33.121780+00:00"
+    },
+    "openai": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135935+00:00"
+    },
+    "spotify": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135950+00:00"
+    },
+    "youtube": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135959+00:00"
+    },
+    "sendgrid": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135964+00:00"
+    },
+    "whatsapp": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135968+00:00"
+    },
+    "persona": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135972+00:00"
+    },
+    "s3": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135977+00:00"
+    },
+    "chartmetric": {
+      "connected": false,
+      "detail": "not configured",
+      "checked_at": "2026-03-21T01:14:33.135981+00:00"
+    },
+    "railway": {
+      "connected": true,
+      "detail": "CLI connected",
+      "checked_at": "2026-03-21T01:14:33.672739+00:00"
+    },
+    "stripe": {
+      "connected": true,
+      "detail": "TEST mode",
+      "checked_at": "2026-03-21T01:14:33.917141+00:00"
+    },
+    "anthropic": {
+      "connected": true,
+      "detail": "claude-3-haiku OK",
+      "checked_at": "2026-03-21T01:14:34.340366+00:00"
+    }
+  }
+}

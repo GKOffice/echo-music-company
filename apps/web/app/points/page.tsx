@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react"; // suspense-patched
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -66,7 +66,7 @@ function ArtistCard({ artist, colorIndex }: { artist: Artist; colorIndex: number
   );
 }
 
-export default function PointsStorePage() {
+function PointsStorePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -211,5 +211,13 @@ export default function PointsStorePage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function PointsStorePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-950 flex items-center justify-center"><div className="text-gray-400">Loading...</div></div>}>
+      <PointsStorePageInner />
+    </Suspense>
   );
 }
