@@ -58,6 +58,7 @@ class YouTubeAgent(BaseAgent):
             "schedule_premiere": self._schedule_premiere,
             "generate_thumbnail_brief": self._generate_thumbnail_brief,
             "seed_reaction_channels": self._seed_reaction_channels,
+            "algorithm_whisper": self._task_algorithm_whisper,
             # Legacy
             "upload_video": self._upload_video,
             "enable_monetization": self._enable_monetization,
@@ -528,6 +529,185 @@ class YouTubeAgent(BaseAgent):
             "outreach_list": outreach_list,
             "genre_matched": genre,
             "delegated_to_comms": True,
+        }
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_algorithm_whisper(self, task: AgentTask) -> dict:
+        """Algorithm Whisperer — scores and optimises a YouTube video for the algorithm."""
+        p = task.payload
+        artist_id = p.get("artist_id") or task.artist_id
+        video_url = p.get("video_url", "")
+        video_title = p.get("video_title", "")
+        genre = (p.get("genre") or "pop").lower()
+
+        artist = None
+        if artist_id:
+            artist = await self.db_fetchrow("SELECT name, genre FROM artists WHERE id = $1::uuid", artist_id)
+
+        artist_name = (artist["name"] if artist else "") or p.get("artist_name", "")
+        artist_genre = (artist["genre"] if artist else None) or genre
+
+        # ---- Title scoring ----
+        title_len = len(video_title)
+        title_score = 0
+        title_feedback = []
+
+        if 50 <= title_len <= 70:
+            title_score += 35
+        elif 40 <= title_len < 50 or 70 < title_len <= 80:
+            title_score += 20
+            title_feedback.append(f"Title is {title_len} chars — aim for 50-70")
+        else:
+            title_score += 5
+            title_feedback.append(f"Title too {'short' if title_len < 40 else 'long'} ({title_len} chars)")
+
+        if video_title and artist_name and artist_name.lower() in video_title[:30].lower():
+            title_score += 20
+        elif video_title:
+            title_score += 10
+            title_feedback.append("Place artist name within the first 30 characters")
+
+        power_words = ["official", "music video", "lyric video", "visualizer", "premiere",
+                       "ft.", "feat.", str(CURRENT_YEAR)]
+        power_hits = sum(1 for w in power_words if w.lower() in video_title.lower())
+        title_score += min(25, power_hits * 8)
+
+        if "(" in video_title or "[" in video_title:
+            title_score += 10
+        else:
+            title_feedback.append("Add context in parentheses e.g. (Official Music Video)")
+
+        title_score = min(100, title_score)
+
+        # ---- SEO & clickbait scores ----
+        seo_score = min(100, int(title_score * 0.5 + 30))
+        click_bait_score = min(100, int(title_score * 0.6 + 20))
+
+        # ---- Retention prediction ----
+        _retention_benchmarks = {
+            "hip-hop": 42, "pop": 45, "electronic": 38, "r&b": 47,
+            "rock": 44, "classical": 35, "jazz": 40, "indie": 43,
+        }
+        base_retention = next(
+            (v for k, v in _retention_benchmarks.items() if k in artist_genre.lower()), 43
+        )
+        retention_prediction = min(70, base_retention + (title_score - 50) // 10)
+
+        # ---- Optimised title ----
+        if video_title and title_score < 80:
+            optimized_title = video_title
+            if "(" not in optimized_title and "[" not in optimized_title:
+                optimized_title = f"{optimized_title} (Official Music Video)"
+            if artist_name and artist_name.lower() not in optimized_title[:30].lower():
+                optimized_title = f"{artist_name} - {optimized_title}"
+            if len(optimized_title) > 80:
+                optimized_title = optimized_title[:77] + "..."
+        else:
+            optimized_title = video_title or f"{artist_name} - [Track Title] (Official Music Video)"
+
+        # ---- Tag strategy: 5 broad + 10 specific + 5 long-tail ----
+        _genre_tags = {
+            "hip-hop": ["hip hop", "rap music", "new hip hop", "hip hop 2026", "rap 2026"],
+            "pop": ["pop music", "new pop", "pop 2026", "pop hits", "popular music"],
+            "r&b": ["r&b music", "new r&b", "r&b 2026", "rnb", "soul music"],
+            "electronic": ["electronic music", "edm", "electronic 2026", "dance music", "beats"],
+            "rock": ["rock music", "new rock", "rock 2026", "guitar", "indie rock"],
+        }
+        genre_key = next((k for k in _genre_tags if k in artist_genre.lower()), None)
+        broad_tags = _genre_tags.get(genre_key, ["new music", "music 2026", "official music video", "musician", "artist"])
+
+        specific_tags: list = []
+        if artist_name:
+            specific_tags += [artist_name, f"{artist_name} music", f"{artist_name} official"]
+        if video_title:
+            track_part = video_title.split(" - ")[-1].split("(")[0].strip()
+            if track_part:
+                specific_tags += [track_part, f"{artist_name} {track_part}".strip()]
+        specific_tags += [
+            f"new {artist_genre} music", f"{artist_genre} artist", f"official video {CURRENT_YEAR}",
+            f"{artist_genre} {CURRENT_YEAR}", f"Melodio {artist_genre}",
+        ]
+        specific_tags = specific_tags[:10]
+
+        long_tail_tags = [
+            f"best new {artist_genre} {CURRENT_YEAR}",
+            f"{artist_genre} music video {CURRENT_YEAR}",
+            f"emerging {artist_genre} artist",
+            f"new {artist_genre} song",
+            f"Melodio music {artist_genre}",
+        ]
+
+        tag_strategy = list(dict.fromkeys(
+            t for t in (broad_tags[:5] + specific_tags + long_tail_tags[:5]) if t
+        ))
+
+        # ---- Description template ----
+        description_template = (
+            f'"{video_title or "[Track Title]"}" by {artist_name or "[Artist Name]"}\n'
+            f"Stream/Download: [LINK IN BIO]\n"
+            f"Follow {artist_name or '[Artist]'} on Instagram: @[handle] | TikTok: @[handle]\n\n"
+            f"[CHAPTERS — improves retention & SEO]\n"
+            f"0:00 Intro\n0:30 Verse 1\n1:00 Chorus\n[...]\n\n"
+            f"[Tip: first 125 chars are critical — include genre + year + artist name above]\n\n"
+            f"© {CURRENT_YEAR} Melodio. All rights reserved.\n"
+            f"Distributed by Melodio Distribution."
+        )
+
+        # ---- Genre-based upload timing ----
+        _upload_timing = {
+            "hip-hop": {"best_days": ["Thursday", "Friday"], "best_hour_et": "2pm–4pm", "reason": "Friday streaming surge"},
+            "pop": {"best_days": ["Friday", "Thursday"], "best_hour_et": "10am–12pm", "reason": "Afternoon discovery peak"},
+            "r&b": {"best_days": ["Friday", "Saturday"], "best_hour_et": "3pm–5pm", "reason": "Weekend chill session peak"},
+            "electronic": {"best_days": ["Friday", "Saturday"], "best_hour_et": "4pm–6pm", "reason": "Pre-weekend energy"},
+            "rock": {"best_days": ["Thursday", "Friday"], "best_hour_et": "12pm–2pm", "reason": "Lunch discovery window"},
+        }
+        timing = _upload_timing.get(
+            next((k for k in _upload_timing if k in artist_genre.lower()), None),
+            {"best_days": ["Friday", "Thursday"], "best_hour_et": "2pm–4pm", "reason": "General peak discovery window"},
+        )
+
+        upload_blueprint = {
+            "upload_timing": timing,
+            "thumbnail_tips": [
+                "High contrast — subject vs background (aim for 3:1 contrast ratio)",
+                "Visible emotion on face if artist is present",
+                "Bold text overlay — max 4 words, Impact or bold sans-serif",
+                "Test 2 A/B variants for first 48 hours",
+                "Avoid red/green combination (colorblind accessibility)",
+            ],
+            "description_first_125_chars": (
+                f'"{video_title or "[Track]"}" by {artist_name} — '
+                f"Official {artist_genre.title()} Music Video. Stream now: [link]"
+            ),
+            "end_screen_strategy": "Add at 20s before end: 2 video cards + subscribe button",
+            "cards_strategy": "Add playlist card at 30% runtime + channel card at 60% runtime",
+            "premiere_recommended": True,
+            "community_post_schedule": [
+                "48h before: teaser still",
+                "24h before: countdown post",
+                "Launch day: share button push",
+            ],
+        }
+
+        logger.info(f"[YouTube] Algorithm whisper for {artist_name}: seo={seo_score}, title_score={title_score}")
+        return {
+            "artist_id": artist_id,
+            "artist_name": artist_name,
+            "video_url": video_url,
+            "video_title_analyzed": video_title,
+            "seo_score": seo_score,
+            "click_bait_score": click_bait_score,
+            "retention_prediction": retention_prediction,
+            "title_score": title_score,
+            "title_feedback": title_feedback,
+            "optimized_title": optimized_title,
+            "tag_strategy": tag_strategy,
+            "description_template": description_template,
+            "upload_blueprint": upload_blueprint,
+            "hero_skill": "algorithm_whisperer",
         }
 
     # ----------------------------------------------------------------

@@ -77,6 +77,7 @@ class CommsAgent(BaseAgent):
             "collect_feedback": self._collect_feedback,
             "check_sentiment": self._check_sentiment,
             "escalate_issue": self._escalate_issue,
+            "tone_calibrate": self._task_tone_calibrate,
         }
         handler = handlers.get(task.task_type)
         result = await handler(task) if handler else {"status": "unknown_task", "task_type": task.task_type}
@@ -429,6 +430,147 @@ class CommsAgent(BaseAgent):
             "severity": severity,
             "escalated_to": routes,
             "escalated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_tone_calibrate(self, task: AgentTask) -> dict:
+        """Tone Calibrator — builds a communication tone profile for an artist."""
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        sample_messages = task.payload.get("sample_messages", [])
+        communication_context = task.payload.get("communication_context", "general")
+
+        artist = await self.db_fetchrow(
+            "SELECT name, genre, bio, comm_style FROM artists WHERE id = $1::uuid", artist_id
+        )
+        if not artist:
+            return {"error": "Artist not found"}
+
+        artist_name = artist["name"]
+        genre = (artist.get("genre") or "pop").lower()
+        existing_comm_style = artist.get("comm_style") or "casual"
+
+        # Genre-based communication defaults
+        _genre_tone_map = {
+            "hip-hop": {"formality": 2, "energy": 9, "verbosity": 4, "emoji_usage": "frequent"},
+            "trap": {"formality": 2, "energy": 9, "verbosity": 3, "emoji_usage": "frequent"},
+            "classical": {"formality": 9, "energy": 2, "verbosity": 7, "emoji_usage": "none"},
+            "jazz": {"formality": 8, "energy": 3, "verbosity": 6, "emoji_usage": "none"},
+            "pop": {"formality": 5, "energy": 6, "verbosity": 5, "emoji_usage": "moderate"},
+            "rock": {"formality": 3, "energy": 7, "verbosity": 4, "emoji_usage": "minimal"},
+            "electronic": {"formality": 4, "energy": 6, "verbosity": 5, "emoji_usage": "minimal"},
+            "r&b": {"formality": 4, "energy": 6, "verbosity": 6, "emoji_usage": "moderate"},
+            "indie": {"formality": 3, "energy": 5, "verbosity": 7, "emoji_usage": "minimal"},
+            "country": {"formality": 5, "energy": 5, "verbosity": 6, "emoji_usage": "minimal"},
+        }
+        tone = next(
+            (v for k, v in _genre_tone_map.items() if k in genre or genre in k),
+            {"formality": 5, "energy": 5, "verbosity": 5, "emoji_usage": "moderate"},
+        ).copy()
+
+        # Refine with sample messages if provided
+        if sample_messages and self.claude:
+            try:
+                sample_text = "\n".join(str(m)[:200] for m in sample_messages[:5])
+                msg = await self.claude.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=200,
+                    system="Analyze communication style. Return JSON only.",
+                    messages=[{"role": "user", "content": (
+                        f"Analyze these messages from a {genre} artist named {artist_name}:\n{sample_text}\n\n"
+                        f"Return JSON: {{\"formality\": int(1-10), \"energy\": int(1-10), "
+                        f"\"verbosity\": int(1-10), \"emoji_usage\": \"none|minimal|moderate|frequent\"}}"
+                    )}],
+                )
+                text = msg.content[0].text.strip()
+                start, end = text.find("{"), text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    analyzed = json.loads(text[start:end])
+                    tone = {
+                        "formality": (tone["formality"] + int(analyzed.get("formality", tone["formality"]))) // 2,
+                        "energy": (tone["energy"] + int(analyzed.get("energy", tone["energy"]))) // 2,
+                        "verbosity": (tone["verbosity"] + int(analyzed.get("verbosity", tone["verbosity"]))) // 2,
+                        "emoji_usage": analyzed.get("emoji_usage", tone["emoji_usage"]),
+                    }
+            except Exception as e:
+                logger.error(f"[Comms] Claude tone analysis error: {e}")
+
+        tone_profile = {
+            "artist_id": artist_id,
+            "artist_name": artist_name,
+            "genre": genre,
+            "communication_context": communication_context,
+            **tone,
+        }
+
+        formality = tone["formality"]
+        energy = tone["energy"]
+        emoji_str = {"none": "", "minimal": " 🙌", "moderate": " 🔥✨", "frequent": " 🔥🎵💯"}.get(
+            tone["emoji_usage"], ""
+        )
+
+        # Generate sample messages in artist voice
+        sample_greeting = sample_update = sample_milestone = ""
+        if self.claude:
+            try:
+                tone_desc = (
+                    f"Formality: {formality}/10, Energy: {energy}/10, "
+                    f"Verbosity: {tone['verbosity']}/10, Emoji: {tone['emoji_usage']}"
+                )
+                msg = await self.claude.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=400,
+                    system="Write in the exact voice and style of a music artist. Match their tone precisely.",
+                    messages=[{"role": "user", "content": (
+                        f"Write 3 short messages for {artist_name} ({genre} artist). Tone: {tone_desc}\n"
+                        f"1. A greeting introducing themselves to their label\n"
+                        f"2. A project update (just finished a track)\n"
+                        f"3. A milestone celebration (100k streams)\n"
+                        f"Return JSON: {{\"greeting\": str, \"update\": str, \"milestone\": str}}"
+                    )}],
+                )
+                text = msg.content[0].text.strip()
+                start, end = text.find("{"), text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    samples = json.loads(text[start:end])
+                    sample_greeting = samples.get("greeting", "")
+                    sample_update = samples.get("update", "")
+                    sample_milestone = samples.get("milestone", "")
+            except Exception as e:
+                logger.error(f"[Comms] Claude sample messages error: {e}")
+
+        if not sample_greeting:
+            if formality <= 3:
+                sample_greeting = f"yo what's good{emoji_str}, it's {artist_name} — let's get it{emoji_str}"
+                sample_update = f"just wrapped a new one in the lab, hard asf{emoji_str}"
+                sample_milestone = f"100k already?? y'all wild fr{emoji_str}"
+            elif formality >= 7:
+                sample_greeting = f"Hello, I'm {artist_name}. Looking forward to working together."
+                sample_update = f"I've completed a new recording and would appreciate your feedback when available."
+                sample_milestone = f"Grateful to have reached 100,000 streams. Thank you for your support."
+            else:
+                sample_greeting = f"Hey! I'm {artist_name} — excited to be here{emoji_str}"
+                sample_update = f"Just finished a new track — feeling good about this one{emoji_str}"
+                sample_milestone = f"100K streams!! Thank you so much{emoji_str}"
+
+        # Persist updated comm_style if it changed
+        comm_style_label = "formal" if formality >= 7 else "casual"
+        if existing_comm_style != comm_style_label:
+            await self.db_execute(
+                "UPDATE artists SET comm_style = $2 WHERE id = $1::uuid",
+                artist_id, comm_style_label,
+            )
+
+        logger.info(f"[Comms] Tone calibrated for {artist_name}: formality={formality}, energy={energy}")
+        return {
+            "tone_profile": tone_profile,
+            "sample_greeting": sample_greeting,
+            "sample_update": sample_update,
+            "sample_milestone": sample_milestone,
+            "comm_style": comm_style_label,
+            "hero_skill": "tone_calibrator",
         }
 
     # ----------------------------------------------------------------

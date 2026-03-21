@@ -92,6 +92,7 @@ class PRAgent(BaseAgent):
             "build_epk": self._build_epk,
             "monitor_coverage": self._monitor_coverage,
             "submit_awards": self._submit_awards,
+            "coverage_predict": self._task_coverage_predict,
             # legacy
             "announce_release": self._write_press_release,
         }
@@ -343,4 +344,150 @@ class PRAgent(BaseAgent):
             "streams": streams,
             "eligible_awards": eligible,
             "total_opportunities": len(AWARD_OPPORTUNITIES),
+        }
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_coverage_predict(self, task: AgentTask) -> dict:
+        """Coverage Predictor — scores likelihood of press coverage per outlet tier."""
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        release_id = task.payload.get("release_id") or task.release_id
+        pitch_angle = task.payload.get("pitch_angle", "")
+
+        artist = await self.db_fetchrow(
+            "SELECT name, genre, melodio_score FROM artists WHERE id = $1::uuid", artist_id
+        )
+        if not artist:
+            return {"error": "Artist not found"}
+
+        artist_name = artist["name"]
+        genre = (artist.get("genre") or "pop").lower()
+        melodio_score = int(artist.get("melodio_score") or 50)
+
+        release_type = "single"
+        if release_id:
+            release = await self.db_fetchrow(
+                "SELECT release_type FROM releases WHERE id = $1::uuid", release_id
+            )
+            if release:
+                release_type = (release.get("release_type") or "single").lower()
+
+        # Pitch angle strength bonus (0–15 pts)
+        pitch_boost = 0
+        if pitch_angle:
+            strong_angles = ["first", "exclusive", "debut", "viral", "signed", "festival", "tour", "collab"]
+            pitch_boost = min(15, sum(5 for kw in strong_angles if kw in pitch_angle.lower()))
+
+        type_boost = {"album": 10, "ep": 5, "single": 0}.get(release_type, 0)
+
+        def _score_tier(threshold: int) -> int:
+            gap = melodio_score - threshold
+            if gap >= 20:
+                return min(100, 85 + pitch_boost + type_boost)
+            elif gap >= 0:
+                return min(100, 60 + gap + pitch_boost + type_boost)
+            else:
+                return max(0, 30 + gap + pitch_boost + type_boost)
+
+        tier1_score = _score_tier(80)
+        tier2_score = _score_tier(60)
+        tier3_score = min(100, 55 + pitch_boost + (melodio_score // 5))
+        tier4_score = min(100, 75 + pitch_boost)
+
+        if tier1_score >= 60:
+            recommended_tier = "tier1"
+        elif tier2_score >= 60:
+            recommended_tier = "tier2"
+        elif tier3_score >= 55:
+            recommended_tier = "tier3"
+        else:
+            recommended_tier = "tier4"
+
+        # Genre-relevant outlet lists
+        _genre_outlets = {
+            "hip-hop": {
+                "tier1": ["Pitchfork", "Rolling Stone", "Complex"],
+                "tier2": ["HipHopDX", "Pigeons & Planes", "FADER"],
+                "tier3": ["SubmitHub", "DJBooth", "Audiomack Blog"],
+                "tier4": ["Reddit r/hiphopheads", "TikTok Reviewers", "YouTube Reactors"],
+            },
+            "pop": {
+                "tier1": ["Billboard", "Rolling Stone", "NME"],
+                "tier2": ["Ones To Watch", "Variance", "The Line of Best Fit"],
+                "tier3": ["SubmitHub", "PopCrush", "Idolator"],
+                "tier4": ["Reddit r/popheads", "TikTok Reviewers", "Playlist Curators"],
+            },
+            "r&b": {
+                "tier1": ["Pitchfork", "Rolling Stone", "Billboard"],
+                "tier2": ["FADER", "Variance", "Ones To Watch"],
+                "tier3": ["SubmitHub", "Earmilk", "SoulTracks"],
+                "tier4": ["Reddit r/rnb", "YouTube Reactors", "Indie Playlist Curators"],
+            },
+            "electronic": {
+                "tier1": ["Pitchfork", "NME", "Resident Advisor"],
+                "tier2": ["XLR8R", "The Line of Best Fit", "Earmilk"],
+                "tier3": ["SubmitHub", "We Rave You", "Your EDM"],
+                "tier4": ["SoundCloud Reposts", "YouTube Reactors", "Reddit r/electronicmusic"],
+            },
+        }
+        _default_outlets = {
+            "tier1": ["Pitchfork", "Rolling Stone", "Billboard", "NME"],
+            "tier2": ["Ones To Watch", "Variance", "The Line of Best Fit", "Stereogum"],
+            "tier3": ["SubmitHub", "Genre blogs", "Local press"],
+            "tier4": ["SubmitHub", "Indie curators", "Reddit communities"],
+        }
+        genre_key = next((k for k in _genre_outlets if k in genre), None)
+        outlets_by_tier = _genre_outlets.get(genre_key, _default_outlets)
+        target_outlets = outlets_by_tier.get(recommended_tier, _default_outlets[recommended_tier])
+
+        # Generate pitch strategy
+        pitch_strategy = ""
+        if self.claude and pitch_angle:
+            try:
+                prompt = (
+                    f"Artist: {artist_name}, genre: {genre}, Melodio Score: {melodio_score}/100.\n"
+                    f"Release: {release_type}. Pitch angle: '{pitch_angle}'.\n"
+                    f"Recommended tier: {recommended_tier} outlets like {', '.join(target_outlets[:2])}.\n"
+                    f"Write a 2-3 sentence pitch strategy. Be specific about the narrative angle and newsworthiness."
+                )
+                msg = await self.claude.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=200,
+                    system="You are a music PR strategist. Write punchy, specific pitch strategies.",
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                pitch_strategy = msg.content[0].text.strip()
+            except Exception as e:
+                logger.error(f"[PR] Claude pitch strategy error: {e}")
+
+        if not pitch_strategy:
+            tier_label = {
+                "tier1": "major publications", "tier2": "tastemaker outlets",
+                "tier3": "genre blogs and local press", "tier4": "playlist curators and communities",
+            }.get(recommended_tier, "outlets")
+            angle_note = f" Lead with: {pitch_angle}." if pitch_angle else ""
+            pitch_strategy = (
+                f"Target {tier_label} with a direct, story-driven pitch emphasising {artist_name}'s unique {genre} perspective.{angle_note} "
+                f"Include streaming stats and an EPK link."
+            )
+
+        logger.info(f"[PR] Coverage predict for {artist_name}: recommended={recommended_tier}, score={melodio_score}")
+        return {
+            "artist_id": artist_id,
+            "artist_name": artist_name,
+            "melodio_score": melodio_score,
+            "coverage_scores": {
+                "tier1": tier1_score,
+                "tier2": tier2_score,
+                "tier3": tier3_score,
+                "tier4": tier4_score,
+            },
+            "recommended_tier": recommended_tier,
+            "pitch_strategy": pitch_strategy,
+            "target_outlets": target_outlets,
+            "pitch_angle": pitch_angle,
+            "release_type": release_type,
+            "hero_skill": "coverage_predictor",
         }

@@ -9,6 +9,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+import httpx
+
 from anthropic import AsyncAnthropic
 from base_agent import BaseAgent, AgentTask, AgentResult
 
@@ -67,6 +69,7 @@ class SocialAgent(BaseAgent):
             "engage_comments": self._engage_comments,
             "detect_ugc": self._detect_ugc,
             "generate_caption": self._generate_caption,
+            "trend_surf": self._task_trend_surf,
             # legacy handlers kept for compatibility
             "create_content_calendar": self._create_content_calendar,
             "generate_post": self._generate_post,
@@ -390,3 +393,134 @@ class SocialAgent(BaseAgent):
         release_id = task.payload.get("release_id") or task.release_id
         budget = task.payload.get("budget_usd", 500)
         return {"release_id": release_id, "tiktok_budget": budget, "status": "campaign_live"}
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_trend_surf(self, task: AgentTask) -> dict:
+        """Trend Surfer — identifies rising trends and generates content briefs."""
+        artist_id = task.payload.get("artist_id") or task.artist_id
+        genre = task.payload.get("genre", "pop")
+        platforms = task.payload.get("platforms", ["tiktok", "instagram", "youtube"])
+
+        artist = await self.db_fetchrow("SELECT name, genre FROM artists WHERE id = $1::uuid", artist_id)
+        artist_name = artist["name"] if artist else ""
+        artist_genre = (artist["genre"] if artist else None) or genre
+
+        # Fetch iTunes RSS trending albums
+        chart_entries = []
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://rss.applemarketingtools.com/api/v2/us/music/most-played/10/albums.json"
+                )
+                if resp.status_code == 200:
+                    feed = resp.json().get("feed", {})
+                    for entry in feed.get("results", []):
+                        chart_entries.append({
+                            "name": entry.get("name", ""),
+                            "artist": entry.get("artistName", ""),
+                            "genre": entry.get("genres", [{}])[0].get("name", "") if entry.get("genres") else "",
+                        })
+        except Exception as e:
+            logger.warning(f"[Social] iTunes RSS fetch failed: {e}")
+
+        # Identify rising genres from chart
+        genre_counts: dict = {}
+        for entry in chart_entries:
+            g = entry.get("genre", "").lower()
+            if g:
+                genre_counts[g] = genre_counts.get(g, 0) + 1
+
+        rising_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)
+
+        # Infer trending formats from chart genres
+        format_map = {
+            "hip-hop/rap": "drill", "r&b/soul": "bedroom pop", "pop": "hyperpop",
+            "alternative": "lo-fi beats", "electronic": "ambient beats",
+            "country": "country pop", "latin": "reggaeton",
+        }
+        trending_formats = list({format_map[g] for g in genre_counts if g in format_map})
+        if not trending_formats:
+            trending_formats = ["lo-fi beats", "bedroom pop", "drill"]
+
+        # Research-backed optimal post times per platform
+        optimal_post_times = {
+            "tiktok": {"best_days": ["Tuesday", "Thursday", "Friday"], "best_hours": ["7pm", "9pm", "11am"]},
+            "instagram": {"best_days": ["Monday", "Wednesday", "Friday"], "best_hours": ["11am", "1pm", "7pm"]},
+            "youtube": {"best_days": ["Thursday", "Friday", "Saturday"], "best_hours": ["2pm", "4pm", "8pm"]},
+            "twitter": {"best_days": ["Wednesday", "Friday"], "best_hours": ["9am", "12pm", "5pm"]},
+        }
+        schedule = {p: optimal_post_times.get(p, optimal_post_times["instagram"]) for p in platforms}
+
+        # Trend alignment score
+        genre_lower = (artist_genre or "").lower()
+        trend_score = 50
+        for g, count in genre_counts.items():
+            if g in genre_lower or genre_lower in g:
+                trend_score = min(100, 50 + count * 15)
+                break
+
+        # Generate content briefs via Claude or fallback
+        content_briefs = []
+        if self.claude and chart_entries:
+            try:
+                chart_summary = ", ".join([f"{e['artist']} - {e['name']}" for e in chart_entries[:5]])
+                prompt = (
+                    f"Artist genre: {artist_genre}. Top chart entries right now: {chart_summary}. "
+                    f"Trending formats: {', '.join(trending_formats)}. "
+                    f"Generate 3 content ideas for a {artist_genre} artist. "
+                    f"Each idea must have: format, hook, hashtags (list), platform. "
+                    f"Return a JSON array of 3 objects."
+                )
+                msg = await self.claude.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=400,
+                    system="You create viral social media content strategies for music artists. Be specific and platform-native.",
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = msg.content[0].text.strip()
+                start, end = text.find("["), text.rfind("]") + 1
+                if start >= 0 and end > start:
+                    content_briefs = json.loads(text[start:end])
+            except Exception as e:
+                logger.error(f"[Social] Claude trend brief error: {e}")
+
+        if not content_briefs:
+            genre_hashtags = TRENDING_HASHTAGS_BY_GENRE.get(genre_lower, TRENDING_HASHTAGS_BY_GENRE["default"])
+            content_briefs = [
+                {
+                    "format": "Trending Sound Overlay",
+                    "hook": f"Use a top trending audio clip with your {artist_genre} aesthetic",
+                    "hashtags": genre_hashtags[:3] + ["#trending", "#fyp"],
+                    "platform": "tiktok",
+                },
+                {
+                    "format": "Studio Reel",
+                    "hook": "Behind-the-scenes production moment with caption referencing a current trend",
+                    "hashtags": genre_hashtags[:3] + ["#bts", "#studio"],
+                    "platform": "instagram",
+                },
+                {
+                    "format": "Vertical Short",
+                    "hook": f"30-second hook clip timed with trending {trending_formats[0]}",
+                    "hashtags": genre_hashtags[:3] + ["#shorts", "#newmusic"],
+                    "platform": "youtube",
+                },
+            ]
+
+        rising_trends = [{"genre": g, "chart_appearances": c} for g, c in rising_genres[:5]]
+
+        logger.info(f"[Social] Trend surf for {artist_name}: score={trend_score}, {len(rising_trends)} rising genres")
+        return {
+            "artist_id": artist_id,
+            "artist_name": artist_name,
+            "trend_score": trend_score,
+            "rising_trends": rising_trends,
+            "trending_formats": trending_formats,
+            "content_briefs": content_briefs,
+            "optimal_schedule": schedule,
+            "chart_entries_analyzed": len(chart_entries),
+            "hero_skill": "trend_surfer",
+        }
