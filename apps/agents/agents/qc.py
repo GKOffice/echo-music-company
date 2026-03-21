@@ -2,6 +2,8 @@
 QC Agent
 Sits at every agent handoff — verifies deliverables meet standards
 across audio, artwork, metadata, marketing, contracts, and financials.
+Also acts as the system-wide guardrail enforcement layer — any agent can
+submit its output for QC verification and receive a correction broadcast.
 """
 
 import logging
@@ -9,6 +11,8 @@ import re
 from datetime import datetime, timezone
 
 from base_agent import BaseAgent, AgentTask, AgentResult
+from guardrails import ConfidenceGate, GuardrailStatus
+from memory_store import ErrorType
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,7 @@ class QCAgent(BaseAgent):
             "check_financial": self._check_financial,
             "check_point_language": self._check_point_language,
             "run_pre_release_gate": self._run_pre_release_gate,
+            "verify_agent_output": self._verify_agent_output_task,
             # Legacy task types (keep for backwards compat)
             "quality_check": self._legacy_quality_check,
             "approve_release": self._legacy_approve_release,
@@ -527,6 +532,91 @@ class QCAgent(BaseAgent):
         await self.send_message("distribution", "submit_to_dsps", {"release_id": release_id})
         await self.log_audit("approve_release", "releases", release_id)
         return {"release_id": release_id, "status": "qc_approved"}
+
+    # ----------------------------------------------------------------
+    # Cross-agent output verification
+    # ----------------------------------------------------------------
+
+    async def verify_agent_output(
+        self, agent_id: str, task_type: str, output: dict
+    ) -> dict:
+        """
+        Run ConfidenceGate on any agent's output.
+
+        - Logs failures to memory store with HALLUCINATION or SCHEMA_MISMATCH.
+        - Broadcasts a correction back to the originating agent via bus.
+        - Returns a dict with {passed, confidence, reason, correction}.
+        """
+        gate = ConfidenceGate()
+        gate_result = gate.check(output, agent_id, task_type)
+
+        if gate_result.passed:
+            return {
+                "passed": True,
+                "agent_id": agent_id,
+                "task_type": task_type,
+                "confidence": gate_result.confidence,
+                "reason": gate_result.reason,
+            }
+
+        # Classify the error type
+        if gate_result.confidence == 0.0:
+            error_type = ErrorType.SCHEMA_MISMATCH
+        else:
+            error_type = ErrorType.HALLUCINATION
+
+        correction = (
+            f"QC rejected {agent_id}/{task_type} output: {gate_result.reason}. "
+            f"Confidence was {gate_result.confidence:.2f}. "
+            f"Do not emit low-confidence results — return not-found instead."
+        )
+
+        logger.warning(
+            f"[QC] verify_agent_output FAILED — {agent_id}/{task_type}: {gate_result.reason}"
+        )
+
+        if self._memory_store:
+            await self._memory_store.log_failure(
+                agent_id=agent_id,
+                task_type=task_type,
+                input_data={},
+                bad_output=output,
+                error_type=error_type,
+                correction=correction,
+                confidence_score=gate_result.confidence,
+            )
+
+        # Broadcast correction back to the originating agent
+        await self.broadcast(
+            f"agent.{agent_id}",
+            {
+                "topic": "qc.correction",
+                "from_agent": self.agent_id,
+                "to_agent": agent_id,
+                "task_type": task_type,
+                "error_type": error_type.value,
+                "correction": correction,
+                "safe_response": gate_result.safe_response,
+            },
+        )
+
+        return {
+            "passed": False,
+            "agent_id": agent_id,
+            "task_type": task_type,
+            "confidence": gate_result.confidence,
+            "reason": gate_result.reason,
+            "error_type": error_type.value,
+            "correction": correction,
+        }
+
+    async def _verify_agent_output_task(self, task: AgentTask) -> dict:
+        """Task handler wrapper for verify_agent_output."""
+        p = task.payload
+        source_agent = p.get("agent_id", "unknown")
+        source_task_type = p.get("task_type", "unknown")
+        output = p.get("output", {})
+        return await self.verify_agent_output(source_agent, source_task_type, output)
 
     async def on_start(self):
         await self.broadcast("agent.status", {"agent": self.agent_id, "status": "online"})

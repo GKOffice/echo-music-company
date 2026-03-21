@@ -14,6 +14,8 @@ import asyncpg
 from pydantic import BaseModel
 
 from bus import bus
+from guardrails import ConfidenceGate, GuardrailStatus
+from memory_store import AgentMemoryStore, ErrorType
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,8 @@ class BaseAgent(ABC):
         self._task_count = 0
         self._error_count = 0
         self._started_at: Optional[datetime] = None
+        self._memory_store: Optional[AgentMemoryStore] = None
+        self._confidence_gate = ConfidenceGate()
 
     async def start(self):
         """Start the agent — connect to services and begin processing."""
@@ -99,6 +103,8 @@ class BaseAgent(ABC):
         try:
             self._db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
             logger.info(f"[{self.agent_id}] Database connected")
+            self._memory_store = AgentMemoryStore(pool=self._db_pool)
+            await self._memory_store.ensure_table()
         except Exception as e:
             logger.error(f"[{self.agent_id}] Database connection failed: {e}")
 
@@ -131,6 +137,7 @@ class BaseAgent(ABC):
                         result = await self.handle_task(task)
                         elapsed_ms = int((asyncio.get_event_loop().time() - start_ms) * 1000)
                         result.duration_ms = elapsed_ms
+                        result = await self._run_with_guardrails(task, result)
                         await self._mark_task_complete(task.task_id, result)
                         self._task_count += 1
                     except Exception as e:
@@ -258,6 +265,75 @@ class BaseAgent(ABC):
             resource_id,
             json.dumps(details or {"agent_id": self.agent_id}),
         )
+
+    # ----------------------------------------------------------------
+    # Guardrails & learning system
+    # ----------------------------------------------------------------
+
+    async def _run_with_guardrails(self, task: "AgentTask", result: "AgentResult") -> "AgentResult":
+        """
+        Run confidence gate on every result before it is written to DB.
+
+        - PASS: log success to memory store, return result unchanged.
+        - FAIL: log failure to memory store, replace result with safe not-found response.
+        """
+        gate_result = self._confidence_gate.check(
+            result.result, self.agent_id, task.task_type
+        )
+
+        if gate_result.passed:
+            if self._memory_store:
+                await self._memory_store.log_success(
+                    self.agent_id, task.task_type, result.result,
+                    confidence_score=gate_result.confidence,
+                )
+            return result
+
+        # Gate failed — log and replace with safe response
+        logger.warning(
+            f"[{self.agent_id}] Guardrail FAIL on task {task.task_id} "
+            f"({task.task_type}): {gate_result.reason}"
+        )
+        if self._memory_store:
+            await self._memory_store.log_failure(
+                agent_id=self.agent_id,
+                task_type=task.task_type,
+                input_data=task.payload,
+                bad_output=result.result,
+                error_type=ErrorType.LOW_CONFIDENCE,
+                correction=gate_result.reason,
+                confidence_score=gate_result.confidence,
+            )
+
+        safe = gate_result.safe_response or {
+            "found": False,
+            "reason": gate_result.reason,
+            "task_type": task.task_type,
+        }
+        result.result = safe
+        return result
+
+    async def _get_context_from_memory(self, task_type: str) -> str:
+        """
+        Query memory store for recent failure patterns for this agent+task_type
+        and return a formatted warning block for LLM prompt injection.
+        """
+        if not self._memory_store:
+            return ""
+        patterns = await self._memory_store.get_failure_patterns(
+            self.agent_id, task_type, limit=10
+        )
+        return AgentMemoryStore.format_patterns_for_prompt(patterns)
+
+    async def _build_prompt_with_memory(self, base_prompt: str, task_type: str) -> str:
+        """
+        Append known failure patterns to a base LLM prompt so the model
+        avoids repeating previous mistakes.
+        """
+        memory_context = await self._get_context_from_memory(task_type)
+        if not memory_context:
+            return base_prompt
+        return f"{base_prompt}\n\n{memory_context}"
 
     # ----------------------------------------------------------------
     # Abstract / override methods

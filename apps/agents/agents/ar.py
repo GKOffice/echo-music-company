@@ -12,6 +12,8 @@ from typing import Optional
 
 from anthropic import AsyncAnthropic
 from base_agent import BaseAgent, AgentTask, AgentResult
+from guardrails import ScopeGuard, REAL_ID_FIELDS
+from memory_store import ErrorType
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +48,35 @@ class ARAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.claude = AsyncAnthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+        self._scope_guard = ScopeGuard()
 
     async def on_start(self):
         logger.info("[A&R] Online — scanning talent pipeline")
         await self.broadcast("agent.status", {"agent": self.agent_id, "status": "online"})
+        await self._seed_known_hallucinations()
 
     async def handle_task(self, task: AgentTask) -> AgentResult:
+        # Scope guard for tasks that involve external entity lookups
+        if task.task_type in ("review_artist", "score_submission", "recommend_signing"):
+            scope = self._scope_guard.check(self.agent_id, task.task_type, task.payload)
+            if not scope.passed:
+                logger.warning(f"[A&R] Scope guard rejected task {task.task_id}: {scope.reason}")
+                if self._memory_store:
+                    await self._memory_store.log_failure(
+                        agent_id=self.agent_id,
+                        task_type=task.task_type,
+                        input_data=task.payload,
+                        bad_output={},
+                        error_type=ErrorType.OUT_OF_SCOPE,
+                        correction=scope.reason,
+                    )
+                return AgentResult(
+                    success=True,
+                    task_id=task.task_id,
+                    agent_id=self.agent_id,
+                    result=scope.safe_response or {"found": False, "reason": scope.reason},
+                )
+
         handlers = {
             "score_submission": self._score_submission,
             "scan_submissions": self._scan_submissions,
@@ -170,18 +195,42 @@ class ARAgent(BaseAgent):
         artist_id = task.payload.get("artist_id") or task.artist_id
         artist = await self.db_fetchrow("SELECT * FROM artists WHERE id = $1::uuid", artist_id)
         if not artist:
-            return {"error": "Artist not found"}
+            return {"found": False, "reason": "Artist not found in music databases", "searched": ["internal_db"]}
+
+        artist_dict = dict(artist)
+
+        # Confidence gate: require at least one real external ID
+        has_real_id = any(artist_dict.get(f) for f in REAL_ID_FIELDS)
+        if not has_real_id:
+            logger.warning(f"[A&R] Artist {artist_id} has no real external ID — low confidence")
+            if self._memory_store:
+                await self._memory_store.log_failure(
+                    agent_id=self.agent_id,
+                    task_type="review_artist",
+                    input_data={"artist_id": artist_id},
+                    bad_output={"name": artist_dict.get("name"), "no_external_id": True},
+                    error_type=ErrorType.LOW_CONFIDENCE,
+                    correction="Artist has no Spotify/MusicBrainz/Chartmetric ID — cannot verify identity",
+                    confidence_score=0.3,
+                )
+            return {
+                "found": False,
+                "reason": "Artist not found in music databases — no verified external ID",
+                "searched": ["spotify", "musicbrainz", "chartmetric"],
+                "artist_id": artist_id,
+            }
 
         result = {
+            "found": True,
             "artist_id": artist_id,
-            "name": artist.get("name"),
-            "status": artist.get("status"),
-            "echo_score": float(artist.get("echo_score") or 0),
-            "genre": artist.get("genre"),
+            "name": artist_dict.get("name"),
+            "status": artist_dict.get("status"),
+            "echo_score": float(artist_dict.get("echo_score") or 0),
+            "genre": artist_dict.get("genre"),
         }
 
-        if self.claude and artist.get("status") in ("prospect", "reviewing"):
-            result["ai_analysis"] = await self._claude_artist_analysis(dict(artist))
+        if self.claude and artist_dict.get("status") in ("prospect", "reviewing"):
+            result["ai_analysis"] = await self._claude_artist_analysis(artist_dict)
 
         return result
 
@@ -301,14 +350,16 @@ class ARAgent(BaseAgent):
             "ai_detected": bool(submission.get("ai_detected")),
             "already_signed": bool(submission.get("already_signed")),
         }
-        prompt = (
+        base_prompt = (
             f"Score this artist submission for ECHO Records:\n{json.dumps(data, indent=2)}\n\n"
             f"Score each dimension 0-100. Return JSON only:\n"
             f'{{\n  "music_quality": float,\n  "social_presence": float,\n'
             f'  "commercial_potential": float,\n  "genre_fit": float,\n'
             f'  "brand_strength": float,\n  "total": float,\n  "summary": str\n}}\n\n'
-            f"total = music×0.35 + social×0.20 + commercial×0.25 + genre×0.10 + brand×0.10"
+            f"total = music×0.35 + social×0.20 + commercial×0.25 + genre×0.10 + brand×0.10\n\n"
+            f"IMPORTANT: Only score based on provided data. Do not invent streaming numbers or social stats."
         )
+        prompt = await self._build_prompt_with_memory(base_prompt, "score_submission")
         try:
             response = await self.claude.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -337,11 +388,14 @@ class ARAgent(BaseAgent):
 
     async def _claude_artist_analysis(self, artist: dict) -> dict:
         safe = {k: v for k, v in artist.items() if k not in ("id", "user_id")}
-        prompt = (
+        base_prompt = (
             f"Analyze this artist prospect for potential signing:\n{json.dumps(safe, indent=2)}\n\n"
             f"Return JSON: {{\"strengths\": list, \"weaknesses\": list, "
-            f"\"recommendation\": str, \"deal_type\": str}}"
+            f"\"recommendation\": str, \"deal_type\": str}}\n\n"
+            f"IMPORTANT: Only include verifiable facts. "
+            f"If you cannot verify a claim, omit it rather than guessing."
         )
+        prompt = await self._build_prompt_with_memory(base_prompt, "review_artist")
         try:
             response = await self.claude.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -390,6 +444,43 @@ class ARAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[A&R] Upsert prospect error: {e}")
             return None
+
+    async def _seed_known_hallucinations(self):
+        """
+        Seed the memory store with known hallucination patterns on startup.
+        Only inserts if this agent has zero memory records (idempotent).
+        """
+        if not self._memory_store or not self._db_pool:
+            return
+        try:
+            count = await self._db_pool.fetchval(
+                "SELECT COUNT(*) FROM agent_memory WHERE agent_id = $1", self.agent_id
+            )
+            if count and count > 0:
+                return  # Already seeded
+
+            # Dorin Hirvi hallucination — invented artist with fabricated details
+            await self._memory_store.log_failure(
+                agent_id=self.agent_id,
+                task_type="review_artist",
+                input_data={"artist_name": "Dorin Hirvi"},
+                bad_output={
+                    "name": "Dorin Hirvi",
+                    "spotify_id": "3abc123fake",
+                    "monthly_listeners": 45000,
+                    "genre": "electronic",
+                    "label": "Independent",
+                },
+                error_type=ErrorType.HALLUCINATION,
+                correction=(
+                    "Dorin Hirvi does not exist in Spotify, MusicBrainz, or Chartmetric. "
+                    "All details were fabricated. Return found=false for unknown artists."
+                ),
+                confidence_score=0.0,
+            )
+            logger.info("[A&R] Seeded known hallucination patterns into memory store")
+        except Exception as e:
+            logger.warning(f"[A&R] Could not seed hallucinations (table may not exist yet): {e}")
 
     async def _send_signing_recommendation(
         self, artist_id: str, artist_data: dict, scores: dict
