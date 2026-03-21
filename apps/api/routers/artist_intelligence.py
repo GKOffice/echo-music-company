@@ -292,6 +292,159 @@ async def fetch_wikipedia(name: str) -> dict:
         return {"source": "wikipedia", "available": False, "reason": str(e)}
 
 
+async def fetch_soundcloud(name: str) -> dict:
+    """Search SoundCloud — great for independent/emerging artists."""
+    try:
+        # SoundCloud public search (no API key needed)
+        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Mozilla/5.0"}) as client:
+            r = await client.get(
+                "https://api-v2.soundcloud.com/search/users",
+                params={
+                    "q": name,
+                    "client_id": "iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX",  # public client ID
+                    "limit": 3,
+                    "offset": 0,
+                }
+            )
+            if r.status_code == 200:
+                data = r.json()
+                items = data.get("collection", [])
+                if items:
+                    artist = items[0]
+                    return {
+                        "source": "soundcloud",
+                        "available": True,
+                        "followers": artist.get("followers_count", 0),
+                        "following": artist.get("followings_count", 0),
+                        "track_count": artist.get("track_count", 0),
+                        "playlist_count": artist.get("playlist_count", 0),
+                        "likes": artist.get("likes_count", 0),
+                        "description": (artist.get("description") or "")[:300],
+                        "city": artist.get("city"),
+                        "country": artist.get("country"),
+                        "verified": artist.get("verified", False),
+                        "url": artist.get("permalink_url"),
+                        "avatar": artist.get("avatar_url"),
+                    }
+        return {"source": "soundcloud", "available": False, "reason": "not found"}
+    except Exception as e:
+        return {"source": "soundcloud", "available": False, "reason": str(e)[:80]}
+
+
+async def fetch_lastfm(name: str) -> dict:
+    """Last.fm — has data on virtually every artist including indie/underground."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://ws.audioscrobbler.com/2.0/",
+                params={
+                    "method": "artist.getinfo",
+                    "artist": name,
+                    "api_key": "9a8c96953498a9d438acb6f89aa3c3c5",  # free public key
+                    "format": "json",
+                    "autocorrect": 1,
+                }
+            )
+            if r.status_code == 200:
+                d = r.json()
+                if "error" not in d:
+                    a = d.get("artist", {})
+                    stats = a.get("stats", {})
+                    similar = [s.get("name") for s in a.get("similar", {}).get("artist", [])[:5]]
+                    tags = [t.get("name") for t in a.get("tags", {}).get("tag", [])[:5]]
+                    return {
+                        "source": "lastfm",
+                        "available": True,
+                        "listeners": int(stats.get("listeners", 0)),
+                        "playcount": int(stats.get("playcount", 0)),
+                        "similar_artists": similar,
+                        "tags": tags,
+                        "bio": (a.get("bio", {}).get("summary", "") or "")[:400].split("<a href")[0].strip(),
+                        "url": a.get("url"),
+                        "image": next((i.get("#text") for i in reversed(a.get("image", [])) if i.get("#text")), None),
+                    }
+        return {"source": "lastfm", "available": False, "reason": "not found"}
+    except Exception as e:
+        return {"source": "lastfm", "available": False, "reason": str(e)[:80]}
+
+
+async def fetch_itunes(name: str) -> dict:
+    """Apple Music / iTunes — has emerging artists, free search API."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://itunes.apple.com/search",
+                params={"term": name, "media": "music", "entity": "musicArtist", "limit": 3}
+            )
+            if r.status_code == 200:
+                results = r.json().get("results", [])
+                if results:
+                    a = results[0]
+                    # Get top albums
+                    r2 = await client.get(
+                        "https://itunes.apple.com/lookup",
+                        params={"id": a["artistId"], "entity": "album", "limit": 5}
+                    )
+                    albums = []
+                    if r2.status_code == 200:
+                        albums = [
+                            {"name": item.get("collectionName"), "year": (item.get("releaseDate","")[:4])}
+                            for item in r2.json().get("results", [])[1:]
+                            if item.get("wrapperType") == "collection"
+                        ]
+                    return {
+                        "source": "itunes",
+                        "available": True,
+                        "artist_id": a.get("artistId"),
+                        "name": a.get("artistName"),
+                        "genre": a.get("primaryGenreName"),
+                        "url": a.get("artistLinkUrl"),
+                        "albums": albums,
+                    }
+        return {"source": "itunes", "available": False, "reason": "not found"}
+    except Exception as e:
+        return {"source": "itunes", "available": False, "reason": str(e)[:80]}
+
+
+async def fetch_deezer(name: str) -> dict:
+    """Deezer — free API, has indie artists, fan counts, tracklists."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.deezer.com/search/artist",
+                params={"q": name, "limit": 3}
+            )
+            if r.status_code == 200:
+                items = r.json().get("data", [])
+                if items:
+                    a = items[0]
+                    # Get artist detail
+                    r2 = await client.get(f"https://api.deezer.com/artist/{a['id']}")
+                    if r2.status_code == 200:
+                        detail = r2.json()
+                        # Get top tracks
+                        r3 = await client.get(f"https://api.deezer.com/artist/{a['id']}/top?limit=5")
+                        tracks = []
+                        if r3.status_code == 200:
+                            tracks = [
+                                {"title": t.get("title"), "rank": t.get("rank"), "duration": t.get("duration")}
+                                for t in r3.json().get("data", [])
+                            ]
+                        return {
+                            "source": "deezer",
+                            "available": True,
+                            "fans": detail.get("nb_fan", 0),
+                            "albums": detail.get("nb_album", 0),
+                            "radio_available": detail.get("radio", False),
+                            "top_tracks": tracks,
+                            "url": detail.get("link"),
+                            "picture": detail.get("picture_xl"),
+                        }
+        return {"source": "deezer", "available": False, "reason": "not found"}
+    except Exception as e:
+        return {"source": "deezer", "available": False, "reason": str(e)[:80]}
+
+
 async def fetch_bandsintown(name: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -483,13 +636,18 @@ async def analyze_with_claude(artist_name: str, raw_data: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _build_report(artist_name: str, request: Request) -> dict:
-    spotify, youtube, genius, musicbrainz, wikipedia, bandsintown = await asyncio.gather(
+    (spotify, youtube, genius, musicbrainz, wikipedia,
+     bandsintown, soundcloud, lastfm, itunes, deezer) = await asyncio.gather(
         fetch_spotify(artist_name),
         fetch_youtube(artist_name),
         fetch_genius(artist_name),
         fetch_musicbrainz(artist_name),
         fetch_wikipedia(artist_name),
         fetch_bandsintown(artist_name),
+        fetch_soundcloud(artist_name),
+        fetch_lastfm(artist_name),
+        fetch_itunes(artist_name),
+        fetch_deezer(artist_name),
     )
 
     raw_data = {
@@ -499,6 +657,10 @@ async def _build_report(artist_name: str, request: Request) -> dict:
         "musicbrainz": musicbrainz,
         "wikipedia": wikipedia,
         "bandsintown": bandsintown,
+        "soundcloud": soundcloud,
+        "lastfm": lastfm,
+        "itunes": itunes,
+        "deezer": deezer,
     }
 
     analysis = await analyze_with_claude(artist_name, raw_data)
@@ -506,12 +668,18 @@ async def _build_report(artist_name: str, request: Request) -> dict:
     image = (
         spotify.get("image") if spotify.get("available")
         else wikipedia.get("thumbnail") if wikipedia.get("available")
+        else soundcloud.get("avatar") if soundcloud.get("available")
+        else deezer.get("picture") if deezer.get("available")
         else None
     )
 
     genres = spotify.get("genres", []) if spotify.get("available") else []
     if not genres and musicbrainz.get("available"):
         genres = musicbrainz.get("tags", [])
+    if not genres and lastfm.get("available"):
+        genres = lastfm.get("tags", [])
+    if not genres and itunes.get("available") and itunes.get("genre"):
+        genres = [itunes.get("genre")]
 
     platform_stats: dict = {}
     if spotify.get("available"):
@@ -528,6 +696,36 @@ async def _build_report(artist_name: str, request: Request) -> dict:
             "total_views": youtube.get("total_views", 0),
             "video_count": youtube.get("video_count", 0),
             "url": youtube.get("channel_url"),
+        }
+    if soundcloud.get("available"):
+        platform_stats["soundcloud"] = {
+            "followers": soundcloud.get("followers", 0),
+            "tracks": soundcloud.get("track_count", 0),
+            "likes": soundcloud.get("likes", 0),
+            "city": soundcloud.get("city"),
+            "country": soundcloud.get("country"),
+            "url": soundcloud.get("url"),
+        }
+    if lastfm.get("available"):
+        platform_stats["lastfm"] = {
+            "listeners": lastfm.get("listeners", 0),
+            "playcount": lastfm.get("playcount", 0),
+            "similar_artists": lastfm.get("similar_artists", []),
+            "bio": lastfm.get("bio", ""),
+            "url": lastfm.get("url"),
+        }
+    if deezer.get("available"):
+        platform_stats["deezer"] = {
+            "fans": deezer.get("fans", 0),
+            "albums": deezer.get("albums", 0),
+            "top_tracks": deezer.get("top_tracks", []),
+            "url": deezer.get("url"),
+        }
+    if itunes.get("available"):
+        platform_stats["itunes"] = {
+            "genre": itunes.get("genre"),
+            "albums": itunes.get("albums", []),
+            "url": itunes.get("url"),
         }
 
     sources_used = [k for k, v in raw_data.items() if v.get("available")]
