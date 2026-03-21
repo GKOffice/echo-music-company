@@ -15,16 +15,6 @@ const nextConfig = {
       },
     ],
   },
-  async redirects() {
-    return [
-      {
-        source: "/:path*",
-        has: [{ type: "host", value: "melodio.io" }],
-        destination: "https://www.melodio.io/:path*",
-        permanent: true,
-      },
-    ];
-  },
   async rewrites() {
     return [
       {
