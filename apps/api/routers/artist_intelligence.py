@@ -292,41 +292,76 @@ async def fetch_wikipedia(name: str) -> dict:
         return {"source": "wikipedia", "available": False, "reason": str(e)}
 
 
-async def fetch_soundcloud(name: str) -> dict:
-    """Search SoundCloud — great for independent/emerging artists."""
+async def fetch_discogs(name: str) -> dict:
+    """Discogs — free, no key, has indie/underground artists, bios, social links, release history."""
     try:
-        # SoundCloud public search (no API key needed)
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Mozilla/5.0"}) as client:
+        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Melodio/1.0 +https://melodio.io"}) as client:
             r = await client.get(
-                "https://api-v2.soundcloud.com/search/users",
-                params={
-                    "q": name,
-                    "client_id": "iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX",  # public client ID
-                    "limit": 3,
-                    "offset": 0,
-                }
+                "https://api.discogs.com/database/search",
+                params={"q": name, "type": "artist", "per_page": 3}
             )
             if r.status_code == 200:
-                data = r.json()
-                items = data.get("collection", [])
-                if items:
-                    artist = items[0]
-                    return {
-                        "source": "soundcloud",
-                        "available": True,
-                        "followers": artist.get("followers_count", 0),
-                        "following": artist.get("followings_count", 0),
-                        "track_count": artist.get("track_count", 0),
-                        "playlist_count": artist.get("playlist_count", 0),
-                        "likes": artist.get("likes_count", 0),
-                        "description": (artist.get("description") or "")[:300],
-                        "city": artist.get("city"),
-                        "country": artist.get("country"),
-                        "verified": artist.get("verified", False),
-                        "url": artist.get("permalink_url"),
-                        "avatar": artist.get("avatar_url"),
-                    }
-        return {"source": "soundcloud", "available": False, "reason": "not found"}
+                results = r.json().get("results", [])
+                if results:
+                    artist_id = results[0].get("id")
+                    r2 = await client.get(f"https://api.discogs.com/artists/{artist_id}")
+                    if r2.status_code == 200:
+                        a = r2.json()
+                        # Get releases count
+                        r3 = await client.get(f"https://api.discogs.com/artists/{artist_id}/releases", params={"per_page": 5, "sort": "year", "sort_order": "desc"})
+                        releases = []
+                        if r3.status_code == 200:
+                            releases = [
+                                {"title": rel.get("title"), "year": rel.get("year"), "type": rel.get("type")}
+                                for rel in r3.json().get("releases", [])[:5]
+                            ]
+                        urls = a.get("urls", [])
+                        instagram = next((u for u in urls if "instagram" in u), None)
+                        twitter = next((u for u in urls if "twitter" in u or "x.com" in u), None)
+                        website = next((u for u in urls if "instagram" not in u and "twitter" not in u and "x.com" not in u and "facebook" not in u), None)
+                        return {
+                            "source": "discogs",
+                            "available": True,
+                            "profile": (a.get("profile") or "")[:400],
+                            "members": [m.get("name") for m in a.get("members", [])],
+                            "urls": urls[:5],
+                            "instagram": instagram,
+                            "twitter": twitter,
+                            "website": website,
+                            "recent_releases": releases,
+                            "images": [i.get("uri") for i in a.get("images", [])[:2] if i.get("uri")],
+                        }
+        return {"source": "discogs", "available": False, "reason": "not found"}
+    except Exception as e:
+        return {"source": "discogs", "available": False, "reason": str(e)[:80]}
+
+
+async def fetch_soundcloud(name: str) -> dict:
+    """Search SoundCloud oEmbed — no key needed, works for any artist with a profile."""
+    try:
+        slug = name.lower().replace(" ", "-").replace("'", "")
+        async with httpx.AsyncClient(timeout=8, headers={"User-Agent": "Mozilla/5.0"}) as client:
+            r = await client.get(
+                f"https://soundcloud.com/{slug}",
+                follow_redirects=True
+            )
+            if r.status_code == 200 and "soundcloud.com" in str(r.url):
+                text = r.text
+                followers = None
+                import re as _re
+                m = _re.search(r'"followers_count":(\d+)', text)
+                if m: followers = int(m.group(1))
+                track_count = None
+                m2 = _re.search(r'"track_count":(\d+)', text)
+                if m2: track_count = int(m2.group(1))
+                return {
+                    "source": "soundcloud",
+                    "available": followers is not None,
+                    "followers": followers,
+                    "track_count": track_count,
+                    "url": str(r.url),
+                }
+        return {"source": "soundcloud", "available": False, "reason": "profile not found"}
     except Exception as e:
         return {"source": "soundcloud", "available": False, "reason": str(e)[:80]}
 
@@ -637,7 +672,7 @@ async def analyze_with_claude(artist_name: str, raw_data: dict) -> dict:
 
 async def _build_report(artist_name: str, request: Request) -> dict:
     (spotify, youtube, genius, musicbrainz, wikipedia,
-     bandsintown, soundcloud, lastfm, itunes, deezer) = await asyncio.gather(
+     bandsintown, soundcloud, lastfm, itunes, deezer, discogs) = await asyncio.gather(
         fetch_spotify(artist_name),
         fetch_youtube(artist_name),
         fetch_genius(artist_name),
@@ -648,6 +683,7 @@ async def _build_report(artist_name: str, request: Request) -> dict:
         fetch_lastfm(artist_name),
         fetch_itunes(artist_name),
         fetch_deezer(artist_name),
+        fetch_discogs(artist_name),
     )
 
     raw_data = {
@@ -661,6 +697,7 @@ async def _build_report(artist_name: str, request: Request) -> dict:
         "lastfm": lastfm,
         "itunes": itunes,
         "deezer": deezer,
+        "discogs": discogs,
     }
 
     analysis = await analyze_with_claude(artist_name, raw_data)
@@ -726,6 +763,21 @@ async def _build_report(artist_name: str, request: Request) -> dict:
             "genre": itunes.get("genre"),
             "albums": itunes.get("albums", []),
             "url": itunes.get("url"),
+        }
+    if discogs.get("available"):
+        platform_stats["discogs"] = {
+            "profile": discogs.get("profile", ""),
+            "instagram": discogs.get("instagram"),
+            "twitter": discogs.get("twitter"),
+            "website": discogs.get("website"),
+            "recent_releases": discogs.get("recent_releases", []),
+            "members": discogs.get("members", []),
+        }
+    if soundcloud.get("available"):
+        platform_stats["soundcloud"] = {
+            "followers": soundcloud.get("followers", 0),
+            "tracks": soundcloud.get("track_count", 0),
+            "url": soundcloud.get("url"),
         }
 
     sources_used = [k for k, v in raw_data.items() if v.get("available")]
