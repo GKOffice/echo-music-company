@@ -56,6 +56,7 @@ class FanIntelligenceAgent(BaseAgent):
             "trending_artists":        self._task_trending_artists,
             "early_access_alerts":     self._task_early_access_alerts,
             "similar_fans_backing":    self._task_similar_fans_backing,
+            "superfan_radar":          self._task_superfan_radar,
         }
         handler = handlers.get(task.task_type)
         result = await handler(task) if handler else {"status": "unknown_task", "task_type": task.task_type}
@@ -493,6 +494,153 @@ class FanIntelligenceAgent(BaseAgent):
             "similar_fans_count": similar_fans_count,
             "signal":             signal,
             "message":            message,
+        }
+
+    # ----------------------------------------------------------------
+    # superfan_radar
+    # ----------------------------------------------------------------
+
+    async def _task_superfan_radar(self, task: AgentTask) -> dict:
+        """Superfan Radar — tiers fans by engagement signals."""
+        artist_id = task.payload.get("artist_id")
+        top_n = int(task.payload.get("top_n", 100))
+
+        if not artist_id:
+            return {"error": "artist_id required"}
+
+        # Aggregate fan data per user
+        fans = await self.db_fetch(
+            """
+            SELECT user_id,
+                   COUNT(*) as transactions,
+                   COALESCE(SUM(points_purchased), 0) as total_points,
+                   COALESCE(SUM(price_paid), 0) as total_spent,
+                   MIN(created_at) as first_purchase_at
+            FROM echo_points
+            WHERE artist_id = $1::uuid AND status = 'active'
+            GROUP BY user_id
+            ORDER BY total_spent DESC
+            LIMIT $2
+            """,
+            artist_id,
+            top_n,
+        )
+
+        if not fans:
+            return {
+                "total_fans_analyzed": 0,
+                "superfan_count": 0,
+                "tiers": {"diamond": [], "gold": [], "silver": 0, "bronze": 0},
+                "top_10": [],
+                "message": "No fan data yet — this artist's point drop may not be live yet.",
+                "hero_skill": "superfan_radar",
+            }
+
+        # First drop date for early adopter signal
+        first_drop_row = None
+        try:
+            first_drop_row = await self.db_fetchrow(
+                "SELECT MIN(created_at) as first_at FROM point_drops WHERE artist_id = $1::uuid",
+                artist_id,
+            )
+        except Exception as e:
+            logger.warning(f"[FanIntelligence] point_drops query failed: {e}")
+        first_drop_date = first_drop_row["first_at"] if first_drop_row else None
+
+        # Multi-artist supporters (bought points for 2+ Melodio artists)
+        multi_artist_users: set[str] = set()
+        try:
+            user_ids = [str(r["user_id"]) for r in fans]
+            if user_ids:
+                multi_rows = await self.db_fetch(
+                    """
+                    SELECT DISTINCT user_id FROM echo_points
+                    WHERE user_id = ANY($1::uuid[])
+                      AND artist_id != $2::uuid
+                      AND status = 'active'
+                    """,
+                    user_ids,
+                    artist_id,
+                )
+                multi_artist_users = {str(r["user_id"]) for r in multi_rows}
+        except Exception as e:
+            logger.warning(f"[FanIntelligence] multi-artist query failed: {e}")
+
+        # Score each fan
+        scored_fans = []
+        for row in fans:
+            uid = str(row["user_id"])
+            txns = int(row["transactions"])
+            avg_pts = int(row["total_points"]) / max(txns, 1)
+
+            # purchase_frequency (0-25)
+            freq_score = min(25, txns * 5)
+
+            # purchase_size (0-25)
+            if avg_pts >= 100:
+                size_score = 25
+            elif avg_pts >= 50:
+                size_score = 18
+            elif avg_pts >= 10:
+                size_score = 10
+            else:
+                size_score = 5
+
+            # early_adopter (0-25)
+            early_score = 0
+            if first_drop_date and row.get("first_purchase_at"):
+                try:
+                    days_diff = (row["first_purchase_at"] - first_drop_date).days
+                    if 0 <= days_diff <= 7:
+                        early_score = 25
+                    elif days_diff <= 30:
+                        early_score = 12
+                except Exception:
+                    pass
+
+            # multi_artist (0-25)
+            multi_score = 25 if uid in multi_artist_users else 0
+
+            fan_score = freq_score + size_score + early_score + multi_score
+
+            scored_fans.append({
+                "user_id": uid,
+                "fan_score": fan_score,
+                "signals": {
+                    "purchase_frequency": freq_score,
+                    "purchase_size": size_score,
+                    "early_adopter": early_score > 0,
+                    "multi_artist": uid in multi_artist_users,
+                },
+                "transactions": txns,
+                "total_points": int(row["total_points"]),
+                "total_spent": round(float(row["total_spent"]), 2),
+            })
+
+        scored_fans.sort(key=lambda x: x["fan_score"], reverse=True)
+        total = len(scored_fans)
+
+        diamond_cutoff = max(1, int(total * 0.05))
+        gold_cutoff = max(diamond_cutoff + 1, int(total * 0.20))
+        silver_cutoff = max(gold_cutoff + 1, int(total * 0.50))
+
+        diamond = scored_fans[:diamond_cutoff]
+        gold = scored_fans[diamond_cutoff:gold_cutoff]
+        silver_count = len(scored_fans[gold_cutoff:silver_cutoff])
+        bronze_count = len(scored_fans[silver_cutoff:])
+        superfan_count = len(diamond) + len(gold)
+
+        return {
+            "total_fans_analyzed": total,
+            "superfan_count": superfan_count,
+            "tiers": {
+                "diamond": diamond[:20],
+                "gold": gold[:20],
+                "silver": silver_count,
+                "bronze": bronze_count,
+            },
+            "top_10": scored_fans[:10],
+            "hero_skill": "superfan_radar",
         }
 
     # ----------------------------------------------------------------

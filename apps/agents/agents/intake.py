@@ -4,6 +4,7 @@ First point of contact for all demo submissions.
 Scores, categorizes, and routes inbound demos through the pipeline.
 """
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -162,6 +163,7 @@ class IntakeAgent(BaseAgent):
             "send_response": self._send_response,
             "update_watchlist": self._update_watchlist,
             "get_submission_stats": self._get_submission_stats,
+            "artist_fingerprint": self._task_artist_fingerprint,
             # Legacy
             "check_duplicate": self._check_duplicate,
             "validate_submission": self._validate_submission,
@@ -422,6 +424,144 @@ class IntakeAgent(BaseAgent):
         submission_id = task.payload.get("submission_id")
         await self.send_message("ar", "score_submission", {"submission_id": submission_id})
         return {"submission_id": submission_id, "routed_to": "ar"}
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_artist_fingerprint(self, task: AgentTask) -> dict:
+        """Artist Fingerprint — generates a unique profile signature for an inbound artist."""
+        artist_name = task.payload.get("artist_name", "")
+        genre = task.payload.get("genre", "")
+        demo_url = task.payload.get("demo_url", "")
+        social_links = task.payload.get("social_links") or {}
+        bio = task.payload.get("bio", "") or task.payload.get("notes", "")
+
+        if not artist_name:
+            return {"error": "artist_name required"}
+
+        # 1. sonic_identity (0-10): genre clarity + has demo
+        sonic = 5.0
+        if genre:
+            sonic += 2.0
+        if demo_url:
+            sonic += 2.0
+        if genre and "," in genre:  # multiple genres = less clarity
+            sonic -= 1.0
+        sonic = max(0.0, min(10.0, sonic))
+
+        # 2. visual_brand (0-10): social profile completeness
+        visual = 0.0
+        if social_links.get("instagram"):
+            visual += 3.0
+        if social_links.get("tiktok"):
+            visual += 2.0
+        if social_links.get("twitter") or social_links.get("x"):
+            visual += 1.5
+        if social_links.get("website"):
+            visual += 2.0
+        if artist_name and len(artist_name) >= 3:
+            visual += 1.5
+        visual = max(0.0, min(10.0, visual))
+
+        # 3. digital_footprint (0-10): number of active platforms
+        platform_count = sum(1 for v in social_links.values() if v)
+        if demo_url:
+            platform_count += 1
+        if social_links.get("spotify") or task.payload.get("spotify_url"):
+            platform_count += 1
+        digital = min(10.0, platform_count * 1.5)
+
+        # 4. narrative_strength (0-10): bio depth
+        if bio and len(bio) >= 100:
+            narrative = 9.0
+        elif bio and len(bio) >= 50:
+            narrative = 7.0
+        elif bio and len(bio) >= 20:
+            narrative = 6.0
+        elif bio:
+            narrative = 5.0
+        else:
+            narrative = 3.0
+
+        # 5. market_readiness (0-10): release history + distribution
+        market = 3.0
+        releases_12m = int(task.payload.get("releases_last_12m") or 0)
+        if releases_12m >= 3:
+            market += 4.0
+        elif releases_12m >= 1:
+            market += 2.0
+        if social_links.get("spotify") or task.payload.get("spotify_url"):
+            market += 2.0
+        if task.payload.get("distributor"):
+            market += 1.0
+        market = max(0.0, min(10.0, market))
+
+        # 6. collaboration_potential (0-10): network signals
+        collab = 4.0
+        if social_links.get("soundcloud"):
+            collab += 2.0
+        if task.payload.get("features") or task.payload.get("collaborators"):
+            collab += 3.0
+        if platform_count >= 4:
+            collab += 1.0
+        collab = max(0.0, min(10.0, collab))
+
+        factors = {
+            "sonic_identity": round(sonic, 1),
+            "visual_brand": round(visual, 1),
+            "digital_footprint": round(digital, 1),
+            "narrative_strength": round(narrative, 1),
+            "market_readiness": round(market, 1),
+            "collaboration_potential": round(collab, 1),
+        }
+
+        weights = {
+            "sonic_identity": 0.20,
+            "visual_brand": 0.15,
+            "digital_footprint": 0.20,
+            "narrative_strength": 0.15,
+            "market_readiness": 0.20,
+            "collaboration_potential": 0.10,
+        }
+        fingerprint_score = round(sum(factors[k] * weights[k] for k in factors) * 10, 1)
+
+        # Archetype: pick based on top 2 scoring factors
+        sorted_factors = sorted(factors.items(), key=lambda x: x[1], reverse=True)
+        top2 = {sorted_factors[0][0], sorted_factors[1][0]}
+        archetype_map = [
+            ({"sonic_identity", "narrative_strength"}, "The Visionary"),
+            ({"sonic_identity", "market_readiness"}, "The Craftsman"),
+            ({"collaboration_potential", "digital_footprint"}, "The Connector"),
+            ({"visual_brand", "market_readiness"}, "The Brand Builder"),
+            ({"sonic_identity", "digital_footprint"}, "The Raw Talent"),
+        ]
+        archetype = "The Raw Talent"
+        for key_set, label in archetype_map:
+            if key_set.issubset(top2):
+                archetype = label
+                break
+
+        # fingerprint_id: short hash of name + genre + minute-level timestamp
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+        raw = f"{artist_name.lower()}{genre.lower()}{ts}"
+        fingerprint_id = hashlib.md5(raw.encode()).hexdigest()[:12].upper()
+
+        if fingerprint_score >= 70:
+            recommendation = "Strong fingerprint — ready for A&R fast-track review."
+        elif fingerprint_score >= 50:
+            recommendation = "Solid foundation — work on missing dimensions before full A&R push."
+        else:
+            recommendation = "Early stage — build digital presence and release history before resubmitting."
+
+        return {
+            "fingerprint_id": fingerprint_id,
+            "fingerprint_score": fingerprint_score,
+            "factors": factors,
+            "archetype": archetype,
+            "recommendation": recommendation,
+            "hero_skill": "artist_fingerprint",
+        }
 
     async def on_start(self):
         await self.broadcast("agent.status", {"agent": self.agent_id, "status": "online"})

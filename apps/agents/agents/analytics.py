@@ -34,6 +34,7 @@ class AnalyticsAgent(BaseAgent):
             "anomaly_scan": self._task_anomaly_scan,
             "generate_weekly_report": self._task_generate_weekly_report,
             "predict_release_performance": self._task_predict_release_performance,
+            "melodio_score": self._task_melodio_score,
         }
         handler = handlers.get(task.task_type, self._task_default)
         return await handler(task)
@@ -538,6 +539,182 @@ class AnalyticsAgent(BaseAgent):
         }
 
         return AgentResult(success=True, task_id=task.task_id, agent_id=self.agent_id, result=report)
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_melodio_score(self, task: AgentTask) -> AgentResult:
+        """Melodio Score™ — composite 0-100 artist health score across 6 dimensions."""
+        artist_id = task.payload.get("artist_id")
+        if not artist_id:
+            return AgentResult(
+                success=False, task_id=task.task_id, agent_id=self.agent_id, error="artist_id required"
+            )
+
+        artist = await self.db_fetchrow("SELECT * FROM artists WHERE id = $1::uuid", artist_id)
+        if not artist:
+            return AgentResult(
+                success=False, task_id=task.task_id, agent_id=self.agent_id, error="Artist not found"
+            )
+
+        # 1. release_activity (20pts)
+        releases = await self.db_fetch(
+            "SELECT release_date, streams_total, spotify_url, apple_url FROM releases WHERE artist_id = $1::uuid",
+            artist_id,
+        )
+        release_count = len(releases)
+        now = datetime.now(timezone.utc)
+        recent_releases = sum(
+            1 for r in releases
+            if r.get("release_date") and (now.date() - r["release_date"]).days <= 365
+        )
+        release_pts = min(20, int((min(release_count, 5) / 5) * 10 + (min(recent_releases, 3) / 3) * 10))
+
+        # 2. streaming_performance (20pts)
+        total_streams = int(artist.get("total_streams") or 0) or sum(
+            int(r.get("streams_total") or 0) for r in releases
+        )
+        if total_streams >= 1_000_000:
+            stream_pts = 20
+        elif total_streams >= 100_000:
+            stream_pts = 14
+        elif total_streams >= 10_000:
+            stream_pts = 8
+        elif total_streams >= 1_000:
+            stream_pts = 4
+        else:
+            stream_pts = 1
+
+        # 3. fan_engagement (20pts)
+        fan_data = await self.db_fetchrow(
+            "SELECT COUNT(*) as holders, COALESCE(SUM(points_purchased), 0) as total_pts "
+            "FROM echo_points WHERE artist_id = $1::uuid AND status = 'active'",
+            artist_id,
+        )
+        holders = int(fan_data["holders"] or 0) if fan_data else 0
+        if holders >= 100:
+            engagement_pts = 20
+        elif holders >= 20:
+            engagement_pts = 14
+        elif holders >= 5:
+            engagement_pts = 8
+        elif holders >= 1:
+            engagement_pts = 4
+        else:
+            engagement_pts = 0
+
+        # 4. revenue_health (15pts)
+        royalty_data = await self.db_fetchrow(
+            "SELECT COALESCE(SUM(net_amount), 0) as total_royalties "
+            "FROM royalties WHERE artist_id = $1::uuid",
+            artist_id,
+        )
+        total_royalties = float(royalty_data["total_royalties"] or 0) if royalty_data else 0.0
+        if total_royalties >= 10_000:
+            revenue_pts = 15
+        elif total_royalties >= 1_000:
+            revenue_pts = 10
+        elif total_royalties >= 100:
+            revenue_pts = 6
+        elif total_royalties > 0:
+            revenue_pts = 3
+        else:
+            revenue_pts = 0
+
+        # 5. platform_presence (15pts)
+        dsps = set()
+        for r in releases:
+            if r.get("spotify_url"):
+                dsps.add("spotify")
+            if r.get("apple_url"):
+                dsps.add("apple")
+        platform_pts = min(15, len(dsps) * 5 + (3 if release_count > 0 else 0))
+
+        # 6. momentum (10pts): recent 30d vs prior 30d royalties
+        trend = await self.db_fetchrow(
+            "SELECT "
+            "COALESCE(SUM(CASE WHEN period_start >= NOW() - INTERVAL '30 days' THEN net_amount ELSE 0 END), 0) as recent, "
+            "COALESCE(SUM(CASE WHEN period_start >= NOW() - INTERVAL '60 days' AND period_start < NOW() - INTERVAL '30 days' THEN net_amount ELSE 0 END), 0) as prior "
+            "FROM royalties WHERE artist_id = $1::uuid",
+            artist_id,
+        )
+        recent_rev = float(trend["recent"] or 0) if trend else 0.0
+        prior_rev = float(trend["prior"] or 0) if trend else 0.0
+        if prior_rev > 0 and recent_rev > prior_rev * 1.1:
+            momentum_pts = 10
+        elif prior_rev > 0 and recent_rev >= prior_rev * 0.9:
+            momentum_pts = 7
+        elif recent_rev > 0:
+            momentum_pts = 5
+        else:
+            momentum_pts = 2
+
+        melodio_score = release_pts + stream_pts + engagement_pts + revenue_pts + platform_pts + momentum_pts
+
+        if melodio_score >= 90:
+            grade = "S"
+        elif melodio_score >= 80:
+            grade = "A"
+        elif melodio_score >= 70:
+            grade = "B"
+        elif melodio_score >= 60:
+            grade = "C"
+        else:
+            grade = "D"
+
+        scores_map = {
+            "release_activity": release_pts,
+            "streaming_performance": stream_pts,
+            "fan_engagement": engagement_pts,
+            "revenue_health": revenue_pts,
+            "platform_presence": platform_pts,
+            "momentum": momentum_pts,
+        }
+        maxes = {
+            "release_activity": 20, "streaming_performance": 20, "fan_engagement": 20,
+            "revenue_health": 15, "platform_presence": 15, "momentum": 10,
+        }
+        biggest_gap = max(scores_map, key=lambda k: maxes[k] - scores_map[k])
+        insight_map = {
+            "release_activity": "Releasing more consistently would unlock major score gains.",
+            "streaming_performance": "Growing stream counts is the fastest path to a higher score.",
+            "fan_engagement": "Fan point sales are the biggest lever for score improvement.",
+            "revenue_health": "Royalty collection is the key constraint holding this score down.",
+            "platform_presence": "Distributing to more DSPs would meaningfully lift this score.",
+            "momentum": "Recent revenue trend is flat — a new drop could unlock 10+ score points.",
+        }
+        insight = insight_map.get(biggest_gap, "Score is balanced across all dimensions.")
+
+        try:
+            await self.db_execute("ALTER TABLE artists ADD COLUMN IF NOT EXISTS melodio_score INTEGER")
+            await self.db_execute(
+                "UPDATE artists SET melodio_score = $1 WHERE id = $2::uuid",
+                melodio_score,
+                artist_id,
+            )
+        except Exception as e:
+            logger.warning(f"[Analytics] Could not store melodio_score: {e}")
+
+        return AgentResult(
+            success=True,
+            task_id=task.task_id,
+            agent_id=self.agent_id,
+            result={
+                "melodio_score": melodio_score,
+                "grade": grade,
+                "dimensions": {
+                    "release_activity": {"score": release_pts, "max": 20},
+                    "streaming_performance": {"score": stream_pts, "max": 20},
+                    "fan_engagement": {"score": engagement_pts, "max": 20},
+                    "revenue_health": {"score": revenue_pts, "max": 15},
+                    "platform_presence": {"score": platform_pts, "max": 15},
+                    "momentum": {"score": momentum_pts, "max": 10},
+                },
+                "insight": insight,
+                "hero_skill": "melodio_score",
+            },
+        )
 
     # ----------------------------------------------------------------
     # Background loops

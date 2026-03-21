@@ -7,8 +7,11 @@ sends recommendations to CEO, and monitors the artist roster.
 import json
 import logging
 import os
-from datetime import datetime, timezone
+import urllib.parse
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+import httpx
 
 from anthropic import AsyncAnthropic
 from base_agent import BaseAgent, AgentTask, AgentResult
@@ -86,6 +89,7 @@ class ARAgent(BaseAgent):
             "reject_submission": self._reject_submission,
             "pipeline_update": self._pipeline_update,
             "recommend_signing": self._recommend_signing,
+            "momentum_scan": self._task_momentum_scan,
         }
         handler = handlers.get(task.task_type)
         result = await handler(task) if handler else {"status": "unknown_task", "task_type": task.task_type}
@@ -500,6 +504,128 @@ class ARAgent(BaseAgent):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         logger.info(f"[A&R] Signing recommendation → CEO: artist {artist_id} (score={total})")
+
+
+    # ----------------------------------------------------------------
+    # Hero Skills
+    # ----------------------------------------------------------------
+
+    async def _task_momentum_scan(self, task: AgentTask) -> dict:
+        """Momentum Detector — scores artist buzz from free public APIs."""
+        artist_name = task.payload.get("artist_name", "")
+        timeframe_days = int(task.payload.get("timeframe_days", 30))
+
+        if not artist_name:
+            return {"error": "artist_name required"}
+
+        encoded = urllib.parse.quote(artist_name)
+
+        # --- iTunes Search ---
+        itunes_rank = None
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"https://itunes.apple.com/search?term={encoded}&entity=musicArtist&limit=10"
+                )
+                if resp.status_code == 200:
+                    results = resp.json().get("results", [])
+                    for i, r in enumerate(results):
+                        name = r.get("artistName", "").lower()
+                        if artist_name.lower() in name or name in artist_name.lower():
+                            itunes_rank = i + 1
+                            break
+        except Exception as e:
+            logger.warning(f"[A&R] iTunes API error: {e}")
+
+        if itunes_rank and itunes_rank <= 3:
+            search_visibility = "high"
+            visibility_pts = 40
+        elif itunes_rank and itunes_rank <= 10:
+            search_visibility = "medium"
+            visibility_pts = 25
+        else:
+            search_visibility = "low"
+            visibility_pts = 10
+
+        # --- MusicBrainz ---
+        release_count_12m = 0
+        mb_found = False
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=365)).strftime("%Y-%m-%d")
+        try:
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                headers={"User-Agent": "MelodioApp/1.0 (melodio.io)"},
+            ) as client:
+                resp = await client.get(
+                    f"https://musicbrainz.org/ws/2/artist/?query={encoded}&fmt=json&limit=5"
+                )
+                if resp.status_code == 200:
+                    for a in resp.json().get("artists", []):
+                        if artist_name.lower() in a.get("name", "").lower():
+                            mb_found = True
+                            mb_id = a.get("id")
+                            if mb_id:
+                                rel_resp = await client.get(
+                                    f"https://musicbrainz.org/ws/2/release-group"
+                                    f"?artist={mb_id}&fmt=json&limit=100"
+                                )
+                                if rel_resp.status_code == 200:
+                                    for rg in rel_resp.json().get("release-groups", []):
+                                        if rg.get("first-release-date", "") >= cutoff_date:
+                                            release_count_12m += 1
+                            break
+        except Exception as e:
+            logger.warning(f"[A&R] MusicBrainz API error: {e}")
+
+        if release_count_12m >= 3:
+            release_velocity = "high"
+            velocity_pts = 40
+        elif release_count_12m == 2:
+            release_velocity = "medium"
+            velocity_pts = 30
+        elif release_count_12m == 1:
+            release_velocity = "low"
+            velocity_pts = 20
+        else:
+            release_velocity = "none"
+            velocity_pts = 5
+
+        # --- Name uniqueness ---
+        words = artist_name.strip().split()
+        common_prefixes = {"the", "dj", "mc", "lil", "young", "big", "king", "queen"}
+        is_common_prefix = bool(words) and words[0].lower() in common_prefixes
+        if len(artist_name) >= 10 and not is_common_prefix:
+            name_uniqueness = "high"
+            uniqueness_pts = 20
+        elif len(artist_name) >= 6:
+            name_uniqueness = "medium"
+            uniqueness_pts = 14
+        else:
+            name_uniqueness = "low"
+            uniqueness_pts = 8
+
+        momentum_score = visibility_pts + velocity_pts + uniqueness_pts
+
+        if momentum_score >= 70:
+            recommendation = "HIGH MOMENTUM — flag for immediate review"
+        elif momentum_score >= 40:
+            recommendation = "BUILDING — monitor weekly"
+        else:
+            recommendation = "EARLY STAGE — check back in 90 days"
+
+        return {
+            "momentum_score": momentum_score,
+            "signals": {
+                "search_visibility": search_visibility,
+                "itunes_rank": itunes_rank,
+                "release_velocity": release_velocity,
+                "releases_last_12m": release_count_12m,
+                "name_uniqueness": name_uniqueness,
+                "mb_found": mb_found,
+            },
+            "recommendation": recommendation,
+            "hero_skill": "momentum_detector",
+        }
 
 
 if __name__ == "__main__":
