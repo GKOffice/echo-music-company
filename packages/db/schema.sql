@@ -15,7 +15,7 @@ CREATE TABLE users (
   email VARCHAR(255) UNIQUE,
   phone VARCHAR(20) UNIQUE,
   password_hash VARCHAR(255),
-  role VARCHAR(20) NOT NULL CHECK (role IN ('owner','artist','producer','developer')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('owner','artist','producer','developer','admin')),
   status VARCHAR(20) DEFAULT 'active',
   email_verified BOOLEAN DEFAULT FALSE,
   phone_verified BOOLEAN DEFAULT FALSE,

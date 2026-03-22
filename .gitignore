@@ -52,6 +52,9 @@ Thumbs.db
 postgres_data/
 redis_data/
 
+# Credentials
+ADMIN_CREDENTIALS.md
+
 # IDE
 .idea/
 .vscode/
