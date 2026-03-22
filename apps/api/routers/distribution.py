@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 
 from database import get_db
 from routers.auth import get_current_user, TokenData
+from services.distrokid import submit_release as dk_submit, get_streaming_stats as dk_stats
 
 router = APIRouter()
 
@@ -176,8 +177,22 @@ async def submit_to_distributor(
     )
     tracks = [dict(r) for r in tracks_result.mappings().all()]
 
+    artist_name = release.get("stage_name") or release.get("artist_name") or "Unknown Artist"
+
+    # --- Call DistroKid service ---
+    first_isrc = next((t["isrc"] for t in tracks if t.get("isrc")), None)
+    dk_result = await dk_submit(
+        artist_name=artist_name,
+        track_title=release.get("title", "Untitled"),
+        audio_url=release.get("master_audio_url") or "",
+        cover_url=release.get("artwork_url") or "",
+        release_date=str(release.get("release_date")) if release.get("release_date") else "",
+        isrc=first_isrc,
+    )
+    distrokid_id = dk_result.get("distrokid_id")
+
     payload = {
-        "artist_name": release.get("stage_name") or release.get("artist_name"),
+        "artist_name": artist_name,
         "release_title": release.get("title"),
         "genre": release.get("genre"),
         "release_date": str(release.get("release_date")) if release.get("release_date") else None,
@@ -186,9 +201,10 @@ async def submit_to_distributor(
         "master_audio_url": release.get("master_audio_url"),
         "tracks": [{"id": str(t["id"]), "title": t["title"], "isrc": t["isrc"]} for t in tracks],
         "platforms": PLATFORMS,
+        "distrokid_response": dk_result,
     }
 
-    tracking_id = "DK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=12))
+    tracking_id = distrokid_id or ("DK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=12)))
     submission_id = str(uuid.uuid4())
     expected_live = datetime.now(timezone.utc) + timedelta(days=3)
 
@@ -213,9 +229,15 @@ async def submit_to_distributor(
             {"id": str(uuid.uuid4()), "release_id": release_id, "platform": platform},
         )
 
+    # Store distrokid_id and update distribution status on the release
     await db.execute(
-        text("UPDATE releases SET status = 'submitted', updated_at = NOW() WHERE id = :id"),
-        {"id": release_id},
+        text("""UPDATE releases
+               SET status = 'submitted',
+                   distrokid_id = :dk_id,
+                   distribution_status = 'submitted',
+                   updated_at = NOW()
+               WHERE id = :id"""),
+        {"dk_id": distrokid_id, "id": release_id},
     )
     await db.commit()
 
@@ -223,11 +245,49 @@ async def submit_to_distributor(
         "release_id": release_id,
         "submission_id": submission_id,
         "tracking_id": tracking_id,
+        "distrokid_id": distrokid_id,
         "distributor": "distrokid",
         "status": "submitted",
         "platforms": PLATFORMS,
         "expected_live_at": expected_live.isoformat(),
-        "note": "DistroKid API call would fire here in production",
+        "mock": dk_result.get("mock", False),
+    }
+
+
+# ----------------------------------------------------------------
+# Streaming Stats (via DistroKid)
+# ----------------------------------------------------------------
+
+@router.get("/releases/{release_id}/stats")
+async def get_release_stats(
+    release_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Pull per-DSP streaming stats from DistroKid for a release."""
+    result = await db.execute(
+        text("SELECT id, title, distrokid_id, distribution_status FROM releases WHERE id = :id"),
+        {"id": release_id},
+    )
+    release = result.mappings().fetchone()
+    if not release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
+
+    distrokid_id = release.get("distrokid_id")
+    if not distrokid_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Release has not been submitted to DistroKid yet",
+        )
+
+    stats = await dk_stats(distrokid_id)
+
+    return {
+        "release_id": release_id,
+        "title": release["title"],
+        "distrokid_id": distrokid_id,
+        "distribution_status": release.get("distribution_status"),
+        **stats,
     }
 
 

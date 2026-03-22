@@ -120,6 +120,8 @@ CREATE TABLE releases (
   spotify_url TEXT,
   apple_url TEXT,
   youtube_url TEXT,
+  distrokid_id VARCHAR(255),
+  distribution_status VARCHAR(50) DEFAULT 'pending',
   streams_total BIGINT DEFAULT 0,
   revenue_total DECIMAL(12,2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
