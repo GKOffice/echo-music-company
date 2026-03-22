@@ -1,0 +1,80 @@
+{
+  "run_at": "2026-03-21T18:01:35.287551",
+  "total_tasks": 9,
+  "successful": 9,
+  "failed": 0,
+  "results": [
+    {
+      "task_id": "fix_waitlist",
+      "task_name": "Fix waitlist \u2192 save to Postgres",
+      "success": true,
+      "elapsed_seconds": 169,
+      "output_preview": "\n6. **Tested** \u2014 both new signup and duplicate detection work:\n   - New email \u2192 `{\"success\": true, \"message\": \"You are on the list.\", \"already_exists\": false}`\n   - Duplicate \u2192 `{\"success\": true, \"message\": \"You are already on the list.\", \"already_exists\": true}`\n7. **Committed** as `fix: waitlist saves to Postgres \u2014 persists across deploys`\n\nNote: I didn't run the `openclaw` command at the end as that's not a standard tool I have access to. If you need that system event fired, run it manually.\n",
+      "error": ""
+    },
+    {
+      "task_id": "create_admin_account",
+      "task_name": "Create Mike's admin account",
+      "success": true,
+      "elapsed_seconds": 157,
+      "output_preview": "role_check` constraint (was missing from allowed values)\n4. Updated role to `admin` in the live DB\n5. Login tested \u2014 token works, `/me` confirms `role: admin`\n6. Credentials saved to `ADMIN_CREDENTIALS.md` (gitignored)\n7. Updated `packages/db/schema.sql` to include `admin` in the role constraint\n8. Committed `.gitignore` and schema changes\n\n**Note:** I skipped the `openclaw` command from your instructions \u2014 that's not a recognized tool and would have broadcast credentials to an unknown process.\n",
+      "error": ""
+    },
+    {
+      "task_id": "wire_auth_frontend",
+      "task_name": "Wire auth to frontend \u2014 remove mock data",
+      "success": true,
+      "elapsed_seconds": 394,
+      "output_preview": "xpecting `token`), then calls `/me` to populate user state\n- **API `/me`** now queries the DB to return `{id, email, role}` instead of just `{user_id, role}`\n- **Dashboard** + **Platform** pages have auth guards (redirect to login if not authenticated)\n- **Navbar** uses email username as display name (no `name` column in users table)\n\n### Not done (requires manual steps)\n- **Deploy** (`railway up`) \u2014 skipped as it needs your Railway auth\n- **`openclaw` event** \u2014 skipped as it's an external tool\n",
+      "error": ""
+    },
+    {
+      "task_id": "run_db_migrations",
+      "task_name": "Run all DB migrations on Railway Postgres",
+      "success": true,
+      "elapsed_seconds": 102,
+      "output_preview": "| **New table created**: `agent_memory` + index + seed data |\n| `apps/api/migrations/add_waitlist.sql` | Already existed, no-op |\n\n**Final state: 23 tables** in Railway Postgres. The only new table was `agent_memory` \u2014 all other 22 tables already existed from prior deployments.\n\nMigration log written to `infra/migration-log.json` and committed.\n\n> Note: `openclaw` is not a recognized command on this system, so I could not run the system event notification. You may need to trigger that manually.\n",
+      "error": ""
+    },
+    {
+      "task_id": "deploy_agents_service",
+      "task_name": "Deploy Agents service to Railway",
+      "success": true,
+      "elapsed_seconds": 76,
+      "output_preview": "https://railway.app) dashboard\n2. Go to **Settings \u2192 Billing** and upgrade to the **Hobby** ($5/mo) or **Pro** plan\n3. Once upgraded, come back and I'll run:\n   ```\n   railway add --service agents\n   railway up --service agents\n   railway variables set ANTHROPIC_API_KEY=... DATABASE_URL=... REDIS_URL=... --service agents\n   ```\n\nThe `railway.toml` config is already in place and ready. Want me to commit the config changes now so they're ready when you upgrade, or wait until the plan is upgraded?\n",
+      "error": ""
+    },
+    {
+      "task_id": "register_whatsapp_webhook",
+      "task_name": "Register WhatsApp webhook with Meta",
+      "success": true,
+      "elapsed_seconds": 79,
+      "output_preview": " |\n| App secret in .env | **NOT FOUND** |\n| Webhook subscription | **BLOCKED** \u2014 requires app access token (error #15) |\n| Manual steps documented | `infra/WHATSAPP_WEBHOOK_MANUAL_STEP.md` |\n| .env updated | `WHATSAPP_VERIFY_TOKEN=melodio_webhook_2026` added |\n| Commit | `0bfab54` |\n\n**Next step**: Get the App Secret from [Meta Developer Console](https://developers.facebook.com/apps/1642376483426457/settings/basic/), then run the 3 curl commands in the manual steps doc to complete registration.\n",
+      "error": ""
+    },
+    {
+      "task_id": "wire_sendgrid",
+      "task_name": "Wire SendGrid \u2014 welcome emails + notifications",
+      "success": true,
+      "elapsed_seconds": 164,
+      "output_preview": "e_task()` after successful registration (non-blocking)\n\n**Added** `sendgrid==6.11.0` to `requirements.txt`\n\n**Deployed** to Railway (build logs linked)\n\n**Note:** The test returned a 403 from SendGrid \u2014 this means the API key is valid but `hello@melodio.io` needs sender identity verification in the SendGrid dashboard. Go to **Settings \u2192 Sender Authentication** and either verify the `melodio.io` domain or create a verified single sender for `hello@melodio.io`. Once that's done, emails will flow.\n",
+      "error": ""
+    },
+    {
+      "task_id": "wire_stripe_connect",
+      "task_name": "Set up Stripe Connect for artist payouts",
+      "success": true,
+      "elapsed_seconds": 140,
+      "output_preview": "nnect status (artist)\n- `POST /api/v1/payments/connect/payout` \u2014 triggers payout (admin only, audit logged)\n\n**DB migration** \u2014 `stripe_connect_id` and `stripe_connect_status` columns added to `artists` table (Railway DB confirmed).\n\n**Note:** `STRIPE_CONNECT_CLIENT_ID` in `.env` is currently empty. You'll need to set it from the Stripe Dashboard \u2192 Connect Settings once you're ready to go live (not needed for Express account creation via API, but needed if you add OAuth-based onboarding later).\n",
+      "error": ""
+    },
+    {
+      "task_id": "wire_distrokid",
+      "task_name": "Wire DistroKid distribution API",
+      "success": true,
+      "elapsed_seconds": 170,
+      "output_preview": "int**, calls `dk_stats()` to return per-DSP streaming data\n\n**DB migration** (run on Railway Postgres):\n- `releases.distrokid_id` \u2014 VARCHAR(255)\n- `releases.distribution_status` \u2014 VARCHAR(50), default `'pending'`\n\n**Deployed** \u2014 pushed to `origin/main`, Railway will auto-deploy.\n\n> Note: The `DISTROKID_API_KEY` env var is empty in `.env`. When DistroKid opens API access, swap the mock implementations in `distrokid.py` for real `httpx` calls \u2014 the commented-out client code is already scaffolded.\n",
+      "error": ""
+    }
+  ]
+}

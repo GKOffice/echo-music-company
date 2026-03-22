@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use empty string in browser so calls go to /api/... (proxied by Next.js)
+// Use full URL on server-side (SSR/middleware)
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
 // ─── Token Management ────────────────────────────────────────────────────────
 

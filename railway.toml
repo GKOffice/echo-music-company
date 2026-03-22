@@ -24,3 +24,13 @@ healthcheckPath = "/"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+[[services]]
+name = "agents"
+source = "apps/agents"
+dockerfile = "apps/agents/Dockerfile"
+
+[services.deploy]
+startCommand = "python3 main.py"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
