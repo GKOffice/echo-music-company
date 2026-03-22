@@ -46,9 +46,21 @@ app = FastAPI(
     redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None,
 )
 
+ALLOWED_ORIGINS = [
+    "https://melodio.io",
+    "https://www.melodio.io",
+    "https://web-production-6c66b.up.railway.app",
+]
+# In development, also allow localhost
+if os.getenv("ENVIRONMENT") != "production":
+    ALLOWED_ORIGINS += [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
