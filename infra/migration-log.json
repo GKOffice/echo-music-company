@@ -1,0 +1,61 @@
+{
+  "run_at": "2026-03-22T00:57:01.864283+00:00",
+  "tables_before": [
+    "agent_messages",
+    "agent_tasks",
+    "artists",
+    "audit_log",
+    "contacts",
+    "contracts",
+    "copyright_registrations",
+    "digital_bundle_items",
+    "digital_products",
+    "digital_purchases",
+    "dmca_requests",
+    "echo_points",
+    "expenses",
+    "hub_beats",
+    "producers",
+    "releases",
+    "royalties",
+    "sessions",
+    "submissions",
+    "tracks",
+    "users",
+    "waitlist"
+  ],
+  "tables_after": [
+    "agent_memory",
+    "agent_messages",
+    "agent_tasks",
+    "artists",
+    "audit_log",
+    "contacts",
+    "contracts",
+    "copyright_registrations",
+    "digital_bundle_items",
+    "digital_products",
+    "digital_purchases",
+    "dmca_requests",
+    "echo_points",
+    "expenses",
+    "hub_beats",
+    "producers",
+    "releases",
+    "royalties",
+    "sessions",
+    "submissions",
+    "tracks",
+    "users",
+    "waitlist"
+  ],
+  "tables_created": [
+    "agent_memory"
+  ],
+  "migrations_applied": [
+    "packages/db/schema.sql",
+    "apps/api/migrations/add_agent_memory.sql",
+    "apps/api/migrations/add_waitlist.sql"
+  ],
+  "status": "success"
+}
