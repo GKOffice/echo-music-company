@@ -90,6 +90,7 @@ class ARAgent(BaseAgent):
             "pipeline_update": self._pipeline_update,
             "recommend_signing": self._recommend_signing,
             "momentum_scan": self._task_momentum_scan,
+            "growth_report": self._task_growth_report,
         }
         handler = handlers.get(task.task_type)
         result = await handler(task) if handler else {"status": "unknown_task", "task_type": task.task_type}
@@ -625,6 +626,93 @@ class ARAgent(BaseAgent):
             },
             "recommendation": recommendation,
             "hero_skill": "momentum_detector",
+        }
+
+
+    async def _task_growth_report(self, task: AgentTask) -> dict:
+        """Artist Growth Report — generates a personalized growth analysis."""
+        artist_id = task.payload.get("artist_id")
+        artist_name = task.payload.get("artist_name", "")
+        genre = task.payload.get("genre", "")
+        goals = task.payload.get("goals", [])
+        social_links = task.payload.get("social_links", {})
+        streams_estimate = task.payload.get("streams_estimate", "unknown")
+
+        # Pull artist data from DB if artist_id given
+        if artist_id:
+            artist = await self.db_fetchrow("SELECT * FROM artists WHERE id = $1::uuid", artist_id)
+            if artist:
+                artist_name = artist_name or artist.get("name", "")
+                genre = genre or artist.get("genre", "")
+
+        if not artist_name:
+            return {"error": "artist_name or artist_id required"}
+
+        growth_system = (
+            "You are the Growth Strategy Engine at Melodio. Generate a brutally honest, "
+            "personalized growth report for an artist. Return ONLY valid JSON with keys: "
+            "artist_name, overall_score (int), tier (Emerging/Rising/Breaking/Established), "
+            "strengths (list of {area, score, detail}), gaps (list of {area, score, detail, fixable}), "
+            "melodio_action_plan ({immediate, week_1_to_4, month_2_to_6} each list of "
+            "{action, agent, what_we_do, your_result, auto}, plus artist_action_steps list of "
+            "{step, action, why, time}), melodio_advantage, hero_skill. "
+            "Be honest about gaps. Map every gap to a Melodio agent."
+        )
+
+        user_prompt = (
+            f"Growth report for:\nName: {artist_name}\nGenre: {genre or 'Unknown'}\n"
+            f"Goals: {json.dumps(goals) if goals else 'None'}\n"
+            f"Social: {json.dumps(social_links) if social_links else 'None'}\n"
+            f"Streams: {streams_estimate}\n\nReturn ONLY JSON."
+        )
+
+        if self.claude:
+            try:
+                response = await self.claude.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=4096,
+                    system=growth_system,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                text = response.content[0].text.strip()
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    report = json.loads(text[start:end])
+                    report.setdefault("hero_skill", "artist_growth_report")
+                    logger.info(f"[A&R] Growth report generated for {artist_name}")
+                    return report
+            except Exception as e:
+                logger.error(f"[A&R] Growth report Claude error: {e}")
+
+        # Fallback: basic report
+        return {
+            "artist_name": artist_name,
+            "overall_score": 45,
+            "tier": "Emerging",
+            "strengths": [{"area": "Genre Focus", "score": 65, "detail": f"{genre} is a growing market"}],
+            "gaps": [
+                {"area": "Platform Presence", "score": 30, "detail": "Limited data available", "fixable": True},
+                {"area": "Fanbase Quality", "score": 25, "detail": "Engagement data not yet tracked", "fixable": True},
+            ],
+            "melodio_action_plan": {
+                "immediate": [{"action": "Distribution Optimization", "agent": "Distribution Agent", "what_we_do": "Submit catalog to 150+ DSPs", "your_result": "Music available everywhere in 48 hours", "auto": True}],
+                "week_1_to_4": [{"action": "Fan Engagement Campaign", "agent": "Marketing Agent", "what_we_do": "Targeted ad campaigns with predicted ROI", "your_result": "500-2000 new engaged listeners", "auto": True}],
+                "month_2_to_6": [{"action": "Sync Pitching", "agent": "Sync Agent", "what_we_do": "Match songs to film/TV/ad opportunities", "your_result": "Passive income from sync placements", "auto": True}],
+                "artist_action_steps": [
+                    {"step": 1, "action": "Upload 3 best tracks", "why": "A&R Agent needs material to score", "time": "10 minutes"},
+                    {"step": 2, "action": "Connect social accounts", "why": "Analytics Agent needs real data", "time": "5 minutes"},
+                ],
+            },
+            "melodio_advantage": {
+                "agents_working_for_you": 21,
+                "estimated_monthly_value": "$3,000-5,000",
+                "what_you_pay": "Nothing upfront",
+                "revenue_split": "60% to you, always",
+                "masters": "Revert to you in 5 years",
+                "contract": "1 song at a time",
+            },
+            "hero_skill": "artist_growth_report",
         }
 
 

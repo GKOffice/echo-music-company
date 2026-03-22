@@ -28,7 +28,7 @@ export default function SignupPage() {
     const result = await signup(email, password, role);
     setLoading(false);
     if (result.success) {
-      router.push("/dashboard");
+      router.push("/dashboard/growth");
     } else {
       setError(result.error || "Could not create account.");
     }
