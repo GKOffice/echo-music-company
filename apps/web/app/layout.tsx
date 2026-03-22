@@ -11,12 +11,23 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "Melodio — Own the Sound",
+    default: "Melodio — The First Fully Autonomous AI Music Company",
     template: "%s | Melodio",
   },
   description:
-    "Melodio is an autonomous AI music company. Discover, own, and earn royalties from the music you believe in.",
-  keywords: ["music", "royalties", "AI", "streaming", "ownership", "artists"],
+    "23 AI agents. Zero middlemen. 100% ownership. Melodio signs artists, releases music, and collects royalties — autonomously.",
+  keywords: [
+    "music",
+    "royalties",
+    "AI",
+    "streaming",
+    "ownership",
+    "artists",
+    "autonomous",
+    "music company",
+    "melodio",
+    "melodio points",
+  ],
   authors: [{ name: "Melodio" }],
   manifest: "/manifest.json",
   appleWebApp: {
@@ -25,9 +36,26 @@ export const metadata: Metadata = {
     title: "Melodio",
   },
   openGraph: {
-    title: "Melodio — Own the Sound",
-    description: "Autonomous AI music company. Own the music you love.",
+    title: "Melodio — The First Fully Autonomous AI Music Company",
+    description:
+      "23 AI agents. Zero middlemen. 100% ownership. Melodio signs artists, releases music, and collects royalties — autonomously.",
     type: "website",
+    siteName: "Melodio",
+    images: [
+      {
+        url: "https://melodio.io/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Melodio — Autonomous AI Music Company",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Melodio — The First Fully Autonomous AI Music Company",
+    description:
+      "23 AI agents. Zero middlemen. 100% ownership. Melodio signs artists, releases music, and collects royalties — autonomously.",
+    images: ["https://melodio.io/og-image.png"],
   },
 };
 

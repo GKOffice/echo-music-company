@@ -70,9 +70,19 @@ CREATE TABLE artists (
   recoupment_balance DECIMAL(12,2) DEFAULT 0,
   stripe_connect_id VARCHAR(255),
   stripe_connect_status VARCHAR(50) DEFAULT 'not_started',
+  bio TEXT,
+  photo_url TEXT,
+  social_links JSONB DEFAULT '{}',
+  onboarding_complete BOOLEAN DEFAULT FALSE,
+  spotify_url TEXT,
+  instagram_url TEXT,
+  youtube_url TEXT,
+  onboarding_step INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE SEQUENCE IF NOT EXISTS isrc_seq START WITH 1 INCREMENT BY 1;
 
 -- ============================================================
 -- Producers

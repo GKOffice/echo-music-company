@@ -7,6 +7,9 @@ const PROTECTED_PATHS = [
   "/fan/dashboard",
   "/ambassador",
   "/transactions",
+  "/onboarding",
+  "/releases",
+  "/admin",
 ];
 
 export function middleware(request: NextRequest) {

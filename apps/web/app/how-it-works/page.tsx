@@ -1,123 +1,71 @@
-"use client";
-
-import { useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 
+export const metadata: Metadata = {
+  title: "How Melodio Works — AI-Powered Music Career Growth",
+  description:
+    "Submit your demo, get AI-scored in 60 seconds, and let 23 autonomous agents build your career. 60% revenue, 100% ownership, masters revert in 5 years.",
+};
+
 const SECTIONS = [
   {
-    id: "artists",
-    title: "For Artists",
-    emoji: "🎤",
+    num: "01",
+    icon: "📤",
+    title: "Submit Your Demo",
+    lines: [
+      "Upload a track or paste a SoundCloud/YouTube link. Our A&R Agent scores your music in under 60 seconds — analyzing production quality, vocal performance, commercial potential, and genre fit.",
+      "No gatekeepers. No waiting months for a response. Every submission gets a transparent score and honest feedback, whether you're signed or not.",
+    ],
+    stat: "60s",
+    statLabel: "Average AI review time",
     color: "#8b5cf6",
-    tagline: "Submit your music. Keep 100% ownership.",
-    steps: [
-      { icon: "📤", title: "Submit Your Demo", desc: "Upload your music and our A&R Agent reviews it within 48 hours. No gatekeepers, no politics." },
-      { icon: "✅", title: "Get Signed (per song)", desc: "If selected, you get a per-song deal. No long-term contracts. You keep all publishing — we take 10% admin fee only." },
-      { icon: "💎", title: "Drop Melodio Points", desc: "Offer fans fractional royalty ownership in your releases. Raise capital while building your superfan base." },
-      { icon: "💰", title: "Earn Every Month", desc: "Royalties flow to you and your point holders monthly. Full transparency — every stream, every dollar tracked." },
-    ],
-    cta: { label: "Submit Your Demo", href: "/submit" },
   },
   {
-    id: "fans",
-    title: "For Fans",
-    emoji: "🎧",
+    num: "02",
+    icon: "🤖",
+    title: "We Build Your Career",
+    lines: [
+      "Once signed, 23 AI agents activate simultaneously — handling distribution to 150+ DSPs, playlist pitching, social media strategy, sync licensing, PR outreach, and royalty collection from 60+ PROs worldwide.",
+      "Your team never sleeps. Marketing campaigns launch at optimal times. Analytics track every stream. Legal reviews every contract. All running 24/7.",
+    ],
+    stat: "23",
+    statLabel: "AI agents working around the clock",
     color: "#10b981",
-    tagline: "Own a piece of the music. Earn as it streams.",
-    steps: [
-      { icon: "🔍", title: "Discover Rising Artists", desc: "Our AI tracks stream growth, sync placements, social velocity, and press momentum to surface artists before they blow up." },
-      { icon: "💎", title: "Buy Melodio Points", desc: "Purchase fractional royalty ownership in an artist's release catalog. Each point earns a share of streaming royalties." },
-      { icon: "📈", title: "Earn Monthly Royalties", desc: "As streams flow in, royalties are distributed proportionally to all point holders on the 1st of each month." },
-      { icon: "🔄", title: "Trade or Hold", desc: "After a 12-month holding period, your points are freely tradeable on the Melodio marketplace." },
-    ],
-    cta: { label: "Browse Points Store", href: "/points" },
   },
   {
-    id: "producers",
-    title: "For Producers",
-    emoji: "🎛️",
+    num: "03",
+    icon: "💰",
+    title: "You Get Paid",
+    lines: [
+      "Artists keep 60% of all revenue. Melodio takes 40% to fund operations — but you keep 100% of your publishing and your masters revert after 5 years. Quarterly payouts via Stripe with full transparency.",
+      "No hidden recoupment. No 360 deals. No surprise deductions. Every dollar is tracked and visible on your dashboard in real time.",
+    ],
+    stat: "60%",
+    statLabel: "Artist revenue share",
     color: "#f59e0b",
-    tagline: "Upload beats. Get discovered. Earn fair.",
-    steps: [
-      { icon: "⬆️", title: "Upload Your Beats", desc: "List beats with genre tags, BPM, key, and license type. Our system surfaces them to matched artists automatically." },
-      { icon: "🤝", title: "Get Matched with Artists", desc: "Our AI matches your beats to compatible signed artists. Direct introductions — no cold outreach needed." },
-      { icon: "📄", title: "Transparent Licensing", desc: "Set your own license terms: exclusive, non-exclusive, lease. Smart contracts handle everything automatically." },
-      { icon: "💸", title: "Earn on Every Use", desc: "Get paid on placement and earn ongoing royalties when tracks using your beats are streamed." },
-    ],
-    cta: { label: "List Your Beats", href: "/dealroom" },
   },
   {
-    id: "songwriters",
-    title: "For Songwriters",
-    emoji: "✍️",
+    num: "04",
+    icon: "💎",
+    title: "Melodio Points",
+    lines: [
+      "Let fans invest in your music through Melodio Points — fractional royalty ownership. Fans buy points, earn a share of your streaming royalties quarterly, and can trade them after a 12-month holding period.",
+      "Artists raise capital from their community while building a superfan base with real financial alignment. Everyone wins when the music does.",
+    ],
+    stat: "12mo",
+    statLabel: "Hold period, then freely tradeable",
     color: "#3b82f6",
-    tagline: "Register songs. Collect worldwide. Find co-writers.",
-    steps: [
-      { icon: "📋", title: "Register Your Songs", desc: "Register your compositions and collect performance, mechanical, sync, and digital royalties from 60+ PROs worldwide." },
-      { icon: "💎", title: "Offer Publishing Points", desc: "Monetize your catalog now by offering fans fractional ownership of your publishing royalties. You keep 100% — fans earn alongside you." },
-      { icon: "🤝", title: "Find Co-Writers", desc: "Browse the co-write marketplace to find artists and songwriters who match your style. Transparent 50/50 splits, no haggling." },
-      { icon: "💰", title: "Collect Globally", desc: "We handle collection from 60+ PROs. Monthly payouts in your local currency, full audit trail." },
-    ],
-    cta: { label: "Start for Free", href: "/songwriters" },
-  },
-];
-
-const FAQS = [
-  {
-    q: "What are Melodio Points?",
-    a: "Melodio Points represent fractional royalty ownership in an artist's release catalog. When you buy points, you own a percentage of streaming royalties from their music. As the artist streams more, you earn more — paid monthly.",
-  },
-  {
-    q: "Is there any lock-in period?",
-    a: "Points are held for 12 months from purchase date. After that, they are freely tradeable on the Melodio marketplace. We believe in transparency — there are no hidden lock-up extensions.",
-  },
-  {
-    q: "How does Melodio make money?",
-    a: "We charge artists a 10% admin fee on royalties collected, and a 5% marketplace fee on point trades. That's it. No hidden fees, no per-song fees, no long-term contract premiums.",
-  },
-  {
-    q: "What rights do artists give up?",
-    a: "None of the important ones. Artists keep 100% of their publishing rights and masters. Point holders get a revenue share only — they don't gain any creative control or catalog ownership.",
-  },
-  {
-    q: "How are royalties calculated?",
-    a: "Royalties are calculated from streaming platform payouts distributed to Melodio. The revenue share is split proportionally: if you hold 2% of an artist's points and they earn $10,000 in a month, you receive $200. Simple math, transparent ledger.",
-  },
-  {
-    q: "What happens if an artist leaves Melodio?",
-    a: "All existing point agreements honor their terms regardless of whether the artist continues with Melodio. Your royalty rights are protected by contract.",
-  },
-  {
-    q: "Can producers and songwriters use Melodio?",
-    a: "Yes. Producers can list beats on the Deal Room and get matched with artists. Songwriters can register songs, collect global royalties, and offer publishing points — all through one platform.",
-  },
-  {
-    q: "What genres does Melodio support?",
-    a: "All genres. Our A&R Agent is trained on Afrobeats, Hip-Hop, R&B, Pop, Indie, Electronic, Latin, and more. If the music is good and there's momentum, we can work with it.",
-  },
-  {
-    q: "Is Melodio available globally?",
-    a: "Yes. Artists, fans, producers, and songwriters can join from anywhere. Royalty collection covers 60+ PROs across 150+ countries.",
-  },
-  {
-    q: "How do I get started?",
-    a: "It takes 3 minutes. Sign up for a free account, choose your role (Artist, Fan, Producer, or Songwriter), and you'll be directed to the right tools immediately.",
   },
 ];
 
 export default function HowItWorksPage() {
-  const [activeSection, setActiveSection] = useState("artists");
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-
-  const section = SECTIONS.find((s) => s.id === activeSection)!;
-
   return (
     <main className="min-h-screen bg-[#0a0a0f] text-[#f9fafb]">
       <Navbar />
 
       {/* Hero */}
-      <section className="pt-28 pb-16 px-4 text-center relative overflow-hidden">
+      <section className="pt-28 pb-20 px-4 text-center relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#8b5cf6]/8 rounded-full blur-3xl" />
           <div className="absolute top-0 right-1/4 w-96 h-96 bg-[#10b981]/8 rounded-full blur-3xl" />
@@ -125,155 +73,110 @@ export default function HowItWorksPage() {
         <div className="relative z-10 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-[#13131a] border border-[#2a2a3a] rounded-full px-4 py-2 text-sm text-[#9ca3af] mb-6">
             <span className="w-2 h-2 bg-[#10b981] rounded-full animate-pulse" />
-            Built different
+            The future of music
           </div>
           <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6">
             How{" "}
-            <span style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #10b981 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            <span
+              style={{
+                background: "linear-gradient(135deg, #8b5cf6 0%, #10b981 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
               Melodio
             </span>{" "}
             Works
           </h1>
           <p className="text-[#9ca3af] text-xl leading-relaxed max-w-2xl mx-auto">
-            An autonomous AI music company where artists keep everything, fans earn royalties, and the music business finally makes sense.
+            An autonomous AI music company. Submit your music, let 23 agents
+            build your career, keep your masters, and get paid — all without a
+            single middleman.
           </p>
         </div>
       </section>
 
-      {/* Section tabs */}
-      <div className="sticky top-16 z-40 bg-[#0a0a0f]/95 backdrop-blur-lg border-b border-[#2a2a3a]">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActiveSection(s.id)}
-              className={`shrink-0 flex items-center gap-2 text-sm font-semibold px-5 py-2 rounded-full transition-all ${
-                activeSection === s.id
-                  ? "text-white"
-                  : "bg-[#13131a] border border-[#2a2a3a] text-[#9ca3af] hover:text-[#f9fafb]"
-              }`}
-              style={activeSection === s.id ? { background: s.color } : {}}
-            >
-              <span>{s.emoji}</span>
-              {s.title}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Active section walkthrough */}
-      <section className="max-w-6xl mx-auto px-4 py-20">
-        <div className="text-center mb-14">
-          <div className="text-5xl mb-4">{section.emoji}</div>
-          <h2 className="text-4xl font-black mb-3">{section.title}</h2>
-          <p className="text-[#9ca3af] text-xl">{section.tagline}</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {section.steps.map((step, i) => (
-            <div
-              key={i}
-              className="relative bg-[#13131a] rounded-2xl border border-[#2a2a3a] p-6 hover:border-[#8b5cf6]/50 transition-all group"
-            >
-              <div
-                className="absolute top-4 right-4 text-5xl font-black opacity-10 select-none"
-                style={{ color: section.color }}
-              >
-                {String(i + 1).padStart(2, "0")}
-              </div>
-              <div className="text-3xl mb-4">{step.icon}</div>
-              <h3 className="font-bold text-[#f9fafb] mb-2">{step.title}</h3>
-              <p className="text-sm text-[#9ca3af] leading-relaxed">{step.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="text-center mt-10">
-          <Link
-            href={section.cta.href}
-            className="inline-flex items-center gap-2 font-bold px-8 py-4 rounded-xl text-white transition-all"
-            style={{ background: section.color, boxShadow: `0 0 24px ${section.color}40` }}
+      {/* Sections */}
+      <section className="max-w-5xl mx-auto px-4 pb-20 space-y-16">
+        {SECTIONS.map((s) => (
+          <div
+            key={s.num}
+            className="relative bg-[#13131a] rounded-2xl border border-[#2a2a3a] p-8 md:p-12 hover:border-opacity-60 transition-all"
+            style={{ borderColor: `${s.color}30` }}
           >
-            {section.cta.label} →
-          </Link>
-        </div>
-      </section>
-
-      {/* Revenue types */}
-      <section className="bg-[#13131a] border-y border-[#2a2a3a] py-20 px-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-black mb-3">Every Revenue Stream Collected</h2>
-            <p className="text-[#9ca3af]">Melodio collects from all major sources automatically.</p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { icon: "📻", label: "Performance Royalties", desc: "Radio, TV, live performance" },
-              { icon: "💿", label: "Mechanical Royalties", desc: "Physical and digital sales" },
-              { icon: "🎬", label: "Sync Licensing", desc: "Film, TV, ads, games" },
-              { icon: "▶️", label: "YouTube Content ID", desc: "Video monetization worldwide" },
-              { icon: "🌊", label: "Streaming Royalties", desc: "Spotify, Apple Music, Tidal+" },
-              { icon: "🌍", label: "International PROs", desc: "60+ societies, 150+ countries" },
-              { icon: "🎵", label: "Cover Song Licensing", desc: "When others record your songs" },
-              { icon: "🖨️", label: "Print Licensing", desc: "Sheet music and transcriptions" },
-            ].map((item) => (
-              <div key={item.label} className="bg-[#0a0a0f] rounded-xl border border-[#2a2a3a] p-5 hover:border-[#8b5cf6]/40 transition-colors">
-                <div className="text-2xl mb-2">{item.icon}</div>
-                <div className="text-sm font-semibold text-[#f9fafb] mb-1">{item.label}</div>
-                <div className="text-xs text-[#9ca3af]">{item.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="max-w-3xl mx-auto px-4 py-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-black mb-3">Frequently Asked Questions</h2>
-          <p className="text-[#9ca3af]">Straight answers to real questions.</p>
-        </div>
-        <div className="space-y-3">
-          {FAQS.map((faq, i) => (
-            <div key={i} className="bg-[#13131a] rounded-xl border border-[#2a2a3a] overflow-hidden">
-              <button
-                onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-[#1a1a24] transition-colors"
-              >
-                <span className="font-semibold text-[#f9fafb] text-sm pr-4">{faq.q}</span>
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  className={`shrink-0 text-[#9ca3af] transition-transform duration-200 ${openFaq === i ? "rotate-180" : ""}`}
-                >
-                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              {openFaq === i && (
-                <div className="px-6 pb-5 text-sm text-[#9ca3af] leading-relaxed border-t border-[#2a2a3a] pt-4">
-                  {faq.a}
-                </div>
-              )}
+            {/* Number watermark */}
+            <div
+              className="absolute top-6 right-8 text-7xl md:text-8xl font-black opacity-[0.06] select-none"
+              style={{ color: s.color }}
+            >
+              {s.num}
             </div>
-          ))}
-        </div>
+
+            <div className="flex flex-col md:flex-row gap-8 items-start">
+              {/* Icon + Stat */}
+              <div className="shrink-0 flex flex-col items-center gap-4">
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
+                  style={{ background: `${s.color}15` }}
+                >
+                  {s.icon}
+                </div>
+                <div
+                  className="text-center rounded-xl px-4 py-3 min-w-[100px]"
+                  style={{ background: `${s.color}10`, border: `1px solid ${s.color}25` }}
+                >
+                  <div className="text-2xl font-black" style={{ color: s.color }}>
+                    {s.stat}
+                  </div>
+                  <div className="text-xs text-[#9ca3af] mt-0.5 leading-tight">
+                    {s.statLabel}
+                  </div>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 relative z-10">
+                <h2 className="text-2xl md:text-3xl font-black mb-4">{s.title}</h2>
+                {s.lines.map((line, i) => (
+                  <p
+                    key={i}
+                    className="text-[#9ca3af] leading-relaxed mb-3 last:mb-0"
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
       </section>
 
       {/* CTA */}
-      <section className="px-4 pb-20">
-        <div className="max-w-4xl mx-auto bg-[#13131a] rounded-3xl border border-[#2a2a3a] p-12 text-center" style={{ background: "linear-gradient(135deg, #13131a 0%, #1a1128 100%)" }}>
-          <h2 className="text-4xl font-black mb-4">Ready to Own the Sound?</h2>
+      <section className="px-4 pb-24">
+        <div
+          className="max-w-4xl mx-auto rounded-3xl border border-[#2a2a3a] p-12 text-center"
+          style={{
+            background: "linear-gradient(135deg, #13131a 0%, #1a1128 100%)",
+          }}
+        >
+          <h2 className="text-4xl font-black mb-4">Ready to Get Started?</h2>
           <p className="text-[#9ca3af] text-xl mb-10 max-w-xl mx-auto">
-            Join thousands of artists, fans, producers, and songwriters building the future of music together.
+            Submit your demo today. If the music is there, our agents will handle
+            the rest.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/auth/signup" className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white font-bold px-8 py-4 rounded-xl transition-colors text-lg" style={{ boxShadow: "0 0 30px rgba(139,92,246,0.4)" }}>
-              Get Started Free
+            <Link
+              href="/submit"
+              className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white font-bold px-8 py-4 rounded-xl transition-colors text-lg"
+              style={{ boxShadow: "0 0 30px rgba(139,92,246,0.4)" }}
+            >
+              Submit Your Demo
             </Link>
-            <Link href="/points" className="border border-[#2a2a3a] hover:border-[#8b5cf6] text-[#9ca3af] hover:text-[#f9fafb] font-bold px-8 py-4 rounded-xl transition-colors text-lg">
-              Browse Points Store
+            <Link
+              href="/points"
+              className="border border-[#2a2a3a] hover:border-[#8b5cf6] text-[#9ca3af] hover:text-[#f9fafb] font-bold px-8 py-4 rounded-xl transition-colors text-lg"
+            >
+              Join the Waitlist
             </Link>
           </div>
         </div>

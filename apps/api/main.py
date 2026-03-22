@@ -16,6 +16,9 @@ from routers.connections import router as connections_router
 from routers.whatsapp import router as whatsapp_router
 from routers.waitlist import router as waitlist_router
 from routers.growth import router as growth_router
+from routers.onboarding import router as onboarding_router
+from routers.release_pipeline import router as release_pipeline_router
+from routers.admin import router as admin_router
 
 load_dotenv()
 
@@ -71,6 +74,9 @@ app.include_router(connections_router, prefix="/api/v1/connections", tags=["conn
 app.include_router(whatsapp_router)
 app.include_router(waitlist_router, prefix="/api/v1/waitlist", tags=["waitlist"])
 app.include_router(growth_router, prefix="/api/v1/growth", tags=["growth"])
+app.include_router(onboarding_router, prefix="/api/v1/onboarding", tags=["onboarding"])
+app.include_router(release_pipeline_router, prefix="/api/v1/pipeline", tags=["pipeline"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 
 
 @app.get("/health", tags=["system"])

@@ -182,3 +182,166 @@ async def waitlist_confirmation(to_email: str) -> bool:
 async def artist_signed_email(to_email: str, artist_name: str) -> bool:
     html = ARTIST_SIGNED_HTML.replace("{artist_name}", artist_name)
     return await send_email(to_email, f"Welcome aboard, {artist_name}", html)
+
+
+# ---------------------------------------------------------------------------
+# Onboarding & Pipeline emails
+# ---------------------------------------------------------------------------
+
+ONBOARDING_WELCOME_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#13131a;border-radius:12px;padding:48px 40px;">
+        <tr><td align="center" style="padding-bottom:32px;">
+          <span style="font-size:28px;font-weight:700;color:#8b5cf6;letter-spacing:-0.5px;">melodio</span>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:16px;">
+          <h1 style="margin:0;font-size:22px;color:#f9fafb;">Welcome to Melodio{name_line}</h1>
+        </td></tr>
+        <tr><td style="padding-bottom:24px;">
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#a1a1aa;">
+            Your artist profile is set up. Here is what happens next:
+          </p>
+          <ul style="color:#a1a1aa;font-size:15px;line-height:1.8;">
+            <li><strong style="color:#10b981;">Connect your platforms</strong> &mdash; link Spotify, Instagram, and YouTube so our agents can analyze your audience.</li>
+            <li><strong style="color:#10b981;">Upload a demo</strong> &mdash; our A&amp;R agent will review it within 24 hours.</li>
+            <li><strong style="color:#10b981;">Review your growth report</strong> &mdash; personalized recommendations powered by 21 AI agents.</li>
+          </ul>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:32px;">
+          <a href="https://melodio.io/onboarding" style="display:inline-block;background:#8b5cf6;color:#fff;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;">Continue Onboarding</a>
+        </td></tr>
+        <tr><td align="center">
+          <p style="margin:0;font-size:13px;color:#52525b;">&copy; 2026 Melodio &middot; melodio.io</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+DEMO_RECEIVED_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#13131a;border-radius:12px;padding:48px 40px;">
+        <tr><td align="center" style="padding-bottom:32px;">
+          <span style="font-size:28px;font-weight:700;color:#8b5cf6;letter-spacing:-0.5px;">melodio</span>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:16px;">
+          <h1 style="margin:0;font-size:22px;color:#f9fafb;">Demo Received</h1>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:24px;">
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#a1a1aa;">
+            We received your demo <strong style="color:#f9fafb;">{title}</strong>.
+            Our A&amp;R agent is now reviewing it &mdash; you will hear back within 24 hours.
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:32px;">
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#a1a1aa;">
+            In the meantime, check your <a href="https://melodio.io/dashboard" style="color:#8b5cf6;text-decoration:underline;">dashboard</a> for your growth report.
+          </p>
+        </td></tr>
+        <tr><td align="center">
+          <p style="margin:0;font-size:13px;color:#52525b;">&copy; 2026 Melodio &middot; melodio.io</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+RELEASE_SUBMITTED_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#13131a;border-radius:12px;padding:48px 40px;">
+        <tr><td align="center" style="padding-bottom:32px;">
+          <span style="font-size:28px;font-weight:700;color:#8b5cf6;letter-spacing:-0.5px;">melodio</span>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:16px;">
+          <h1 style="margin:0;font-size:22px;color:#f9fafb;">Release Submitted</h1>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:24px;">
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#a1a1aa;">
+            Your release <strong style="color:#f9fafb;">{title}</strong> is being prepared for distribution.
+            Our QC agent will review it, and once approved it will be sent to Spotify, Apple Music, and 150+ platforms.
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:32px;">
+          <a href="https://melodio.io/releases" style="display:inline-block;background:#8b5cf6;color:#fff;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;">View Release Status</a>
+        </td></tr>
+        <tr><td align="center">
+          <p style="margin:0;font-size:13px;color:#52525b;">&copy; 2026 Melodio &middot; melodio.io</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+RELEASE_LIVE_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#13131a;border-radius:12px;padding:48px 40px;">
+        <tr><td align="center" style="padding-bottom:32px;">
+          <span style="font-size:28px;font-weight:700;color:#8b5cf6;letter-spacing:-0.5px;">melodio</span>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:16px;">
+          <h1 style="margin:0;font-size:22px;color:#f9fafb;">Your Music Is Live!</h1>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:24px;">
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#a1a1aa;">
+            <strong style="color:#10b981;">{title}</strong> is now available on Spotify, Apple Music, and 150+ platforms worldwide.
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:32px;">
+          <a href="https://melodio.io/dashboard" style="display:inline-block;background:#10b981;color:#fff;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;">View Analytics</a>
+        </td></tr>
+        <tr><td align="center">
+          <p style="margin:0;font-size:13px;color:#52525b;">&copy; 2026 Melodio &middot; melodio.io</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+
+async def onboarding_welcome_email(to_email: str, name: str = "") -> bool:
+    name_line = f", {name}" if name else ""
+    html = ONBOARDING_WELCOME_HTML.replace("{name_line}", name_line)
+    return await send_email(to_email, "Welcome to Melodio — here's what happens next", html)
+
+
+async def demo_received_email(to_email: str, title: str = "your track") -> bool:
+    html = DEMO_RECEIVED_HTML.replace("{title}", title)
+    return await send_email(to_email, "We received your demo", html)
+
+
+async def release_submitted_email(to_email: str, title: str = "your release") -> bool:
+    html = RELEASE_SUBMITTED_HTML.replace("{title}", title)
+    return await send_email(to_email, "Your release is being prepared for distribution", html)
+
+
+async def release_live_email(to_email: str, title: str = "your release") -> bool:
+    html = RELEASE_LIVE_HTML.replace("{title}", title)
+    return await send_email(to_email, "Your music is now live!", html)
