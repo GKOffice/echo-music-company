@@ -257,11 +257,32 @@ export default function IntelligenceReportPage() {
         <section className="mb-6">
           <h2 className="text-lg font-bold text-white mb-4">Platform Stats</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {stats.spotify?.followers !== undefined && (
+            {(stats.spotify?.available || stats.chartmetric?.available) && (
               <StatCard icon="🎵" platform="Spotify" stats={[
-                { label: "Followers", value: fmt(stats.spotify.followers) },
-                { label: "Monthly Listeners", value: fmt(stats.spotify.monthly_listeners) },
-                { label: "Popularity", value: `${stats.spotify.popularity}/100` },
+                {
+                  label: "Followers",
+                  value: stats.spotify?.followers
+                    ? fmt(stats.spotify.followers)
+                    : stats.chartmetric?.sp_followers
+                    ? fmt(stats.chartmetric.sp_followers)
+                    : "—"
+                },
+                {
+                  label: "Monthly Listeners",
+                  value: stats.chartmetric?.sp_monthly_listeners
+                    ? fmt(stats.chartmetric.sp_monthly_listeners)
+                    : stats.spotify?.monthly_listeners
+                    ? fmt(stats.spotify.monthly_listeners)
+                    : "—"
+                },
+                {
+                  label: "Popularity",
+                  value: stats.spotify?.popularity
+                    ? `${stats.spotify.popularity}/100`
+                    : stats.chartmetric?.cm_score
+                    ? `${Math.round(stats.chartmetric.cm_score)}/100 (CM)`
+                    : "—"
+                },
               ]} />
             )}
             {stats.youtube?.subscribers !== undefined && (

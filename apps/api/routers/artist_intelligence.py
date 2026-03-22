@@ -93,7 +93,13 @@ async def fetch_spotify(name: str) -> dict:
             a = items[0]
             aid = a["id"]
 
-            top_resp, rel_resp = await asyncio.gather(
+            # Fetch artist detail, top tracks, and related artists in parallel
+            # (search endpoint doesn't return followers/popularity — need /artists/{id})
+            detail_resp, top_resp, rel_resp = await asyncio.gather(
+                client.get(
+                    f"https://api.spotify.com/v1/artists/{aid}",
+                    headers={"Authorization": f"Bearer {token}"},
+                ),
                 client.get(
                     f"https://api.spotify.com/v1/artists/{aid}/top-tracks",
                     headers={"Authorization": f"Bearer {token}"},
@@ -104,6 +110,9 @@ async def fetch_spotify(name: str) -> dict:
                     headers={"Authorization": f"Bearer {token}"},
                 ),
             )
+
+            # Use detail endpoint for followers/popularity/genres
+            detail = detail_resp.json() if detail_resp.status_code == 200 else a
 
             top_tracks = []
             if top_resp.status_code == 200:
@@ -120,12 +129,12 @@ async def fetch_spotify(name: str) -> dict:
                 "source": "spotify",
                 "available": True,
                 "id": aid,
-                "name": a["name"],
-                "followers": a.get("followers", {}).get("total", 0),
-                "popularity": a.get("popularity", 0),
-                "genres": a.get("genres", []),
-                "image": (a.get("images") or [{}])[0].get("url"),
-                "external_url": a.get("external_urls", {}).get("spotify"),
+                "name": detail.get("name", a["name"]),
+                "followers": detail.get("followers", {}).get("total", 0),
+                "popularity": detail.get("popularity", 0),
+                "genres": detail.get("genres", []),
+                "image": (detail.get("images") or [{}])[0].get("url"),
+                "external_url": detail.get("external_urls", {}).get("spotify"),
                 "top_tracks": top_tracks,
                 "related_artists": related,
             }
