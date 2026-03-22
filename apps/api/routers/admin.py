@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 from database import get_db
 from routers.auth import get_current_user, TokenData
+from services.weekly_digest import generate_weekly_digest, send_weekly_digest
 
 router = APIRouter()
 
@@ -22,6 +23,10 @@ async def require_admin(current_user: TokenData = Depends(get_current_user)):
 
 class RejectBody(BaseModel):
     reason: Optional[str] = "Does not meet quality standards"
+
+
+class DigestSendRequest(BaseModel):
+    to_email: EmailStr = "ceo@melodio.io"
 
 
 # ---------------------------------------------------------------------------
@@ -178,3 +183,32 @@ async def get_waitlist(
         return {"waitlist": entries, "total": len(entries)}
     except Exception:
         return {"waitlist": [], "total": 0}
+
+
+# ---------------------------------------------------------------------------
+# Weekly Digest
+# ---------------------------------------------------------------------------
+
+@router.get("/weekly-digest")
+async def get_weekly_digest(
+    current_user: TokenData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and return the weekly CEO digest (admin only)."""
+    digest = await generate_weekly_digest(db)
+    return digest
+
+
+@router.post("/weekly-digest/send")
+async def post_send_weekly_digest(
+    body: DigestSendRequest = DigestSendRequest(),
+    current_user: TokenData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and email the weekly CEO digest (admin only)."""
+    result = await send_weekly_digest(body.to_email, db)
+    return {
+        "status": "sent" if result.get("email_sent") else "failed",
+        "sent_to": result.get("sent_to"),
+        "period": result.get("period"),
+    }
