@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from database import get_db
+from services.email import welcome_email
 
 router = APIRouter()
 
@@ -118,6 +121,9 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         },
     )
     await db.commit()
+
+    if user_in.email:
+        asyncio.create_task(welcome_email(user_in.email))
 
     access_token = create_access_token(
         data={"sub": user_id, "role": user_in.role}

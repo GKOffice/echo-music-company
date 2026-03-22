@@ -1,9 +1,12 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from services.email import waitlist_confirmation
 
 router = APIRouter()
 
@@ -56,6 +59,9 @@ async def join_waitlist(body: WaitlistRequest, db: AsyncSession = Depends(get_db
         text("INSERT INTO waitlist (email, source) VALUES (:email, :source)"),
         {"email": email, "source": body.source},
     )
+
+    asyncio.create_task(waitlist_confirmation(email))
+
     return WaitlistResponse(
         success=True,
         message="You are on the list.",
