@@ -199,58 +199,6 @@ async def get_weekly_digest(
     return digest
 
 
-@router.post("/run-migration")
-async def run_pending_migrations(
-    current_user: TokenData = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Run pending DB migrations (admin only — one-time use)."""
-    migrations_run = []
-    errors = []
-
-    # Migration: agent_memory table
-    try:
-        await db.execute(text("""
-            CREATE TABLE IF NOT EXISTS agent_memory (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                agent_id VARCHAR(50) NOT NULL,
-                task_type VARCHAR(100) NOT NULL,
-                error_type VARCHAR(50),
-                input_summary TEXT,
-                bad_output_summary TEXT,
-                correction TEXT,
-                confidence_score FLOAT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                is_success BOOLEAN DEFAULT FALSE
-            )
-        """))
-        await db.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_agent_memory_lookup
-                ON agent_memory(agent_id, task_type, created_at DESC)
-        """))
-        await db.execute(text("""
-            INSERT INTO agent_memory (agent_id, task_type, error_type, input_summary, bad_output_summary, correction, confidence_score, is_success)
-            SELECT 'ar', 'review_artist', 'HALLUCINATION',
-                '{\"artist_name\": \"Dorin Hirvi\"}',
-                '{\"name\": \"Dorin Hirvi\", \"spotify_id\": \"3abc123fake\"}',
-                'Dorin Hirvi does not exist. Return found=false for unknown artists with no verified external ID.',
-                0.0, FALSE
-            WHERE NOT EXISTS (
-                SELECT 1 FROM agent_memory WHERE agent_id = 'ar' AND input_summary LIKE '%Dorin Hirvi%'
-            )
-        """))
-        await db.commit()
-        migrations_run.append("agent_memory table + hallucination seed")
-    except Exception as e:
-        errors.append(f"agent_memory: {str(e)}")
-
-    return {
-        "status": "complete" if not errors else "partial",
-        "migrations_run": migrations_run,
-        "errors": errors,
-    }
-
-
 @router.post("/weekly-digest/send")
 async def post_send_weekly_digest(
     body: DigestSendRequest = DigestSendRequest(),
