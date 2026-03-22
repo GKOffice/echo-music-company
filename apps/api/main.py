@@ -13,6 +13,7 @@ from routers.payments import router as payments_router
 from routers.fan_intelligence import router as fan_intelligence_router
 from routers.artist_intelligence import router as artist_intelligence_router
 from routers.connections import router as connections_router
+from routers.whatsapp import router as whatsapp_router
 
 load_dotenv()
 
@@ -65,6 +66,7 @@ app.include_router(payments_router, prefix="/api/v1/payments", tags=["payments"]
 app.include_router(fan_intelligence_router, prefix="/api/v1/fan-intelligence", tags=["fan-intelligence"])
 app.include_router(artist_intelligence_router, prefix="/api/v1/intelligence", tags=["artist-intelligence"])
 app.include_router(connections_router, prefix="/api/v1/connections", tags=["connections"])
+app.include_router(whatsapp_router)
 
 
 @app.get("/health", tags=["system"])
