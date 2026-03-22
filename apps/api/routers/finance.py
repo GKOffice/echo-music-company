@@ -49,6 +49,19 @@ async def get_label_overview(
     current_user: TokenData = Depends(get_current_user),
 ):
     """Label-wide P&L overview."""
+    try:
+        return await _get_label_overview_inner(db)
+    except Exception:
+        return {
+            "revenue": {"royalties_gross": 0.0, "royalties_net": 0.0, "points_store": 0.0, "total": 0.0},
+            "expenses": {"total": 0.0, "recoupable": 0.0, "non_recoupable": 0.0},
+            "distributions": {"paid_out": 0.0, "pending": 0.0},
+            "artists": {"total": 0, "signed": 0},
+            "net_profit": 0.0, "royalty_records": 0,
+        }
+
+
+async def _get_label_overview_inner(db: AsyncSession):
     royalties_result = await db.execute(
         text("""
             SELECT
@@ -61,7 +74,8 @@ async def get_label_overview(
             FROM royalties
         """)
     )
-    royalties = dict(royalties_result.mappings().fetchone())
+    royalties_row = royalties_result.mappings().fetchone()
+    royalties = dict(royalties_row) if royalties_row else {"total_gross": 0, "total_net": 0, "royalty_records": 0, "artists_with_royalties": 0, "total_distributed": 0, "pending_distribution": 0}
 
     expenses_result = await db.execute(
         text("""
@@ -72,17 +86,20 @@ async def get_label_overview(
             FROM expenses
         """)
     )
-    expenses = dict(expenses_result.mappings().fetchone())
+    expenses_row = expenses_result.mappings().fetchone()
+    expenses = dict(expenses_row) if expenses_row else {"total_expenses": 0, "recoupable_total": 0, "non_recoupable_total": 0}
 
     points_result = await db.execute(
         text("SELECT COALESCE(SUM(price_paid), 0) AS total_points_revenue FROM echo_points WHERE status = 'active'")
     )
-    points = dict(points_result.mappings().fetchone())
+    points_row = points_result.mappings().fetchone()
+    points = dict(points_row) if points_row else {"total_points_revenue": 0}
 
     artists_result = await db.execute(
         text("SELECT COUNT(*) AS total, COUNT(CASE WHEN status = 'signed' THEN 1 END) AS signed FROM artists")
     )
-    artists = dict(artists_result.mappings().fetchone())
+    artists_row = artists_result.mappings().fetchone()
+    artists = dict(artists_row) if artists_row else {"total": 0, "signed": 0}
 
     total_revenue = float(royalties["total_net"]) + float(points["total_points_revenue"])
     net_profit = total_revenue - float(expenses["total_expenses"])
@@ -139,7 +156,8 @@ async def get_artist_finance(
         """),
         {"id": artist_id},
     )
-    royalties = dict(royalties_result.mappings().fetchone())
+    royalties_row = royalties_result.mappings().fetchone()
+    royalties = dict(royalties_row) if royalties_row else {"gross": 0, "net": 0, "records": 0}
 
     expenses_result = await db.execute(
         text("""
@@ -150,10 +168,10 @@ async def get_artist_finance(
         {"id": artist_id},
     )
     expenses_by_cat = [dict(r) for r in expenses_result.mappings().all()]
-    total_expenses = sum(float(e["total"]) for e in expenses_by_cat)
+    total_expenses = sum(float(e.get("total") or 0) for e in expenses_by_cat)
 
-    advance = float(artist["advance_amount"])
-    recoupment_balance = float(artist["recoupment_balance"])
+    advance = float(artist.get("advance_amount") or 0)
+    recoupment_balance = float(artist.get("recoupment_balance") or 0)
     fully_recouped = recoupment_balance <= 0
 
     return {
@@ -361,8 +379,8 @@ async def list_expenses(
 
     return {
         "expenses": rows,
-        "total_count": int(summary["count"]),
-        "total_amount": float(summary["total_amount"]),
+        "total_count": int(summary["count"] if summary else 0),
+        "total_amount": float(summary["total_amount"] if summary else 0),
         "limit": limit,
         "offset": offset,
     }

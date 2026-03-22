@@ -10,6 +10,14 @@ const PROTECTED_PATHS = [
 ];
 
 export function middleware(request: NextRequest) {
+  // Redirect www.melodio.io → melodio.io (Railway only serves bare domain)
+  const host = request.headers.get("host") || "";
+  if (host.startsWith("www.")) {
+    const url = request.nextUrl.clone();
+    url.host = host.replace("www.", "");
+    return NextResponse.redirect(url, 301);
+  }
+
   const token = request.cookies.get("melodio_token")?.value;
   const { pathname } = request.nextUrl;
 
@@ -26,10 +34,12 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/settings/:path*",
-    "/fan/dashboard/:path*",
-    "/ambassador/:path*",
-    "/transactions/:path*",
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

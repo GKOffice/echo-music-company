@@ -857,28 +857,34 @@ async def suggest_price(
 @router.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """Get Deal Room marketplace stats."""
-    result = await db.execute(
-        text("""
-            SELECT
-                COUNT(*) FILTER (WHERE status = 'active') AS active_listings,
-                COUNT(*) FILTER (WHERE status = 'active' AND listing_type IN ('sell_master_points','sell_publishing_points')) AS points_for_sale,
-                COUNT(*) FILTER (WHERE status = 'active' AND listing_type = 'seek_cowriter') AS cowrite_opportunities,
-                COUNT(*) FILTER (WHERE status = 'completed') AS deals_completed
-            FROM deal_listings
-        """)
-    )
-    row = result.mappings().fetchone()
-    value_result = await db.execute(
-        text("SELECT COALESCE(SUM(cash_paid), 0) AS total_value FROM deals WHERE status = 'completed'")
-    )
-    total_value = float(value_result.scalar() or 0)
-    return {
-        "active_listings": int(row["active_listings"] or 0),
-        "points_for_sale": int(row["points_for_sale"] or 0),
-        "cowrite_opportunities": int(row["cowrite_opportunities"] or 0),
-        "deals_completed": int(row["deals_completed"] or 0),
-        "total_value_traded": total_value,
-    }
+    _empty = {"active_listings": 0, "points_for_sale": 0, "cowrite_opportunities": 0, "deals_completed": 0, "total_value_traded": 0.0}
+    try:
+        result = await db.execute(
+            text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE status = 'active') AS active_listings,
+                    COUNT(*) FILTER (WHERE status = 'active' AND listing_type IN ('sell_master_points','sell_publishing_points')) AS points_for_sale,
+                    COUNT(*) FILTER (WHERE status = 'active' AND listing_type = 'seek_cowriter') AS cowrite_opportunities,
+                    COUNT(*) FILTER (WHERE status = 'completed') AS deals_completed
+                FROM deal_listings
+            """)
+        )
+        row = result.mappings().fetchone()
+        value_result = await db.execute(
+            text("SELECT COALESCE(SUM(cash_paid), 0) AS total_value FROM deals WHERE status = 'completed'")
+        )
+        total_value = float(value_result.scalar() or 0)
+        if not row:
+            return _empty
+        return {
+            "active_listings": int(row["active_listings"] or 0),
+            "points_for_sale": int(row["points_for_sale"] or 0),
+            "cowrite_opportunities": int(row["cowrite_opportunities"] or 0),
+            "deals_completed": int(row["deals_completed"] or 0),
+            "total_value_traded": total_value,
+        }
+    except Exception:
+        return _empty
 
 
 # ── External Catalog ──────────────────────────────────────────────────────────

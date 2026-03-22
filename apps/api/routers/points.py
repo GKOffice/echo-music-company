@@ -81,76 +81,79 @@ async def browse_store(
     db: AsyncSession = Depends(get_db),
 ):
     """Browse all active point drops with optional filtering."""
-    where_clauses = ["pd.status = 'active'"]
-    params: dict = {"limit": limit, "offset": offset}
+    try:
+        where_clauses = ["pd.status = 'active'"]
+        params: dict = {"limit": limit, "offset": offset}
 
-    if genre:
-        where_clauses.append("a.genre ILIKE :genre")
-        params["genre"] = f"%{genre}%"
-    if tier:
-        where_clauses.append("a.tier = :tier")
-        params["tier"] = tier
+        if genre:
+            where_clauses.append("a.genre ILIKE :genre")
+            params["genre"] = f"%{genre}%"
+        if tier:
+            where_clauses.append("a.tier = :tier")
+            params["tier"] = tier
 
-    order_map = {
-        "newest": "pd.created_at DESC",
-        "price_asc": "pd.price_per_point ASC",
-        "price_desc": "pd.price_per_point DESC",
-        "confidence_desc": "pd.ai_confidence_score DESC",
-    }
-    order_by = order_map.get(sort, "pd.created_at DESC")
-    where_sql = " AND ".join(where_clauses)
+        order_map = {
+            "newest": "pd.created_at DESC",
+            "price_asc": "pd.price_per_point ASC",
+            "price_desc": "pd.price_per_point DESC",
+            "confidence_desc": "pd.ai_confidence_score DESC",
+        }
+        order_by = order_map.get(sort, "pd.created_at DESC")
+        where_sql = " AND ".join(where_clauses)
 
-    result = await db.execute(
-        text(f"""
-            SELECT
-                pd.id as drop_id, pd.track_id, pd.artist_id,
-                pd.total_points_available, pd.points_sold, pd.price_per_point,
-                pd.early_bird_discount_pct, pd.early_bird_ends_at,
-                pd.ai_confidence_score, pd.closes_at, pd.created_at,
-                pd.total_points_available - pd.points_sold as points_remaining,
-                CASE WHEN pd.total_points_available > 0
-                    THEN ROUND(pd.points_sold / pd.total_points_available * 100, 1)
-                    ELSE 0 END as pct_sold,
-                t.title as track_title, t.duration_seconds, t.genre as track_genre,
-                a.name as artist_name, a.stage_name, a.genre as artist_genre,
-                a.monthly_listeners, a.tier as artist_tier, a.profile_photo_url,
-                COALESCE(
-                    (SELECT price_per_point FROM exchange_trades
-                     WHERE track_id = pd.track_id ORDER BY traded_at DESC LIMIT 1),
-                    pd.price_per_point
-                ) as current_exchange_price
-            FROM point_drops pd
-            JOIN tracks t ON pd.track_id = t.id
-            JOIN artists a ON pd.artist_id = a.id
-            WHERE {where_sql}
-            ORDER BY {order_by}
-            LIMIT :limit OFFSET :offset
-        """),
-        params,
-    )
-    drops = result.mappings().all()
+        result = await db.execute(
+            text(f"""
+                SELECT
+                    pd.id as drop_id, pd.track_id, pd.artist_id,
+                    pd.total_points_available, pd.points_sold, pd.price_per_point,
+                    pd.early_bird_discount_pct, pd.early_bird_ends_at,
+                    pd.ai_confidence_score, pd.closes_at, pd.created_at,
+                    pd.total_points_available - pd.points_sold as points_remaining,
+                    CASE WHEN pd.total_points_available > 0
+                        THEN ROUND(pd.points_sold / pd.total_points_available * 100, 1)
+                        ELSE 0 END as pct_sold,
+                    t.title as track_title, t.duration_seconds, t.genre as track_genre,
+                    a.name as artist_name, a.stage_name, a.genre as artist_genre,
+                    a.monthly_listeners, a.tier as artist_tier, a.profile_photo_url,
+                    COALESCE(
+                        (SELECT price_per_point FROM exchange_trades
+                         WHERE track_id = pd.track_id ORDER BY traded_at DESC LIMIT 1),
+                        pd.price_per_point
+                    ) as current_exchange_price
+                FROM point_drops pd
+                JOIN tracks t ON pd.track_id = t.id
+                JOIN artists a ON pd.artist_id = a.id
+                WHERE {where_sql}
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
+        drops = result.mappings().all()
 
-    count_result = await db.execute(
-        text(f"""
-            SELECT COUNT(*) as total
-            FROM point_drops pd
-            JOIN tracks t ON pd.track_id = t.id
-            JOIN artists a ON pd.artist_id = a.id
-            WHERE {where_sql}
-        """),
-        {k: v for k, v in params.items() if k not in ("limit", "offset")},
-    )
-    total = count_result.scalar()
+        count_result = await db.execute(
+            text(f"""
+                SELECT COUNT(*) as total
+                FROM point_drops pd
+                JOIN tracks t ON pd.track_id = t.id
+                JOIN artists a ON pd.artist_id = a.id
+                WHERE {where_sql}
+            """),
+            {k: v for k, v in params.items() if k not in ("limit", "offset")},
+        )
+        total = count_result.scalar() or 0
 
-    items = []
-    for d in drops:
-        row = _serialize_row(dict(d))
-        monthly_listeners = int(d.get("monthly_listeners") or 0)
-        price = float(d.get("price_per_point") or 0)
-        row["earnings_estimate"] = _earnings_estimate(monthly_listeners, price)
-        items.append(row)
+        items = []
+        for d in drops:
+            row = _serialize_row(dict(d))
+            monthly_listeners = int(d.get("monthly_listeners") or 0)
+            price = float(d.get("price_per_point") or 0)
+            row["earnings_estimate"] = _earnings_estimate(monthly_listeners, price)
+            items.append(row)
 
-    return {"drops": items, "total": total, "limit": limit, "offset": offset}
+        return {"drops": items, "total": total, "limit": limit, "offset": offset}
+    except Exception:
+        return {"drops": [], "total": 0, "limit": limit, "offset": offset}
 
 
 @router.get("/store/{track_id}")
@@ -323,28 +326,31 @@ async def get_portfolio(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
-    result = await db.execute(
-        text("""
-            SELECT
-                ep.id, ep.track_id, ep.points_purchased,
-                ep.price_paid, ep.price_per_point as cost_per_point,
-                ep.royalties_earned, ep.holding_period_ends, ep.status, ep.purchase_date,
-                t.title as track_title, t.genre as track_genre,
-                a.name as artist_name, a.genre as artist_genre, a.profile_photo_url,
-                COALESCE(
-                    (SELECT price_per_point FROM exchange_trades
-                     WHERE track_id = ep.track_id ORDER BY traded_at DESC LIMIT 1),
-                    ep.price_per_point
-                ) as current_price_per_point
-            FROM echo_points ep
-            JOIN tracks t ON ep.track_id = t.id
-            JOIN artists a ON t.artist_id = a.id
-            WHERE ep.buyer_user_id = :user_id AND ep.status IN ('active', 'tradeable')
-            ORDER BY ep.purchase_date DESC
-        """),
-        {"user_id": user_id},
-    )
-    holdings = result.mappings().all()
+    try:
+        result = await db.execute(
+            text("""
+                SELECT
+                    ep.id, ep.track_id, ep.points_purchased,
+                    ep.price_paid, ep.price_per_point as cost_per_point,
+                    ep.royalties_earned, ep.holding_period_ends, ep.status, ep.purchase_date,
+                    t.title as track_title, t.genre as track_genre,
+                    a.name as artist_name, a.genre as artist_genre, a.profile_photo_url,
+                    COALESCE(
+                        (SELECT price_per_point FROM exchange_trades
+                         WHERE track_id = ep.track_id ORDER BY traded_at DESC LIMIT 1),
+                        ep.price_per_point
+                    ) as current_price_per_point
+                FROM echo_points ep
+                JOIN tracks t ON ep.track_id = t.id
+                JOIN artists a ON t.artist_id = a.id
+                WHERE ep.buyer_user_id = :user_id AND ep.status IN ('active', 'tradeable')
+                ORDER BY ep.purchase_date DESC
+            """),
+            {"user_id": user_id},
+        )
+        holdings = result.mappings().all()
+    except Exception:
+        holdings = []
 
     total_cost_basis = 0.0
     total_current_value = 0.0
@@ -352,24 +358,24 @@ async def get_portfolio(
     items = []
 
     for h in holdings:
-        pts = float(h["points_purchased"])
-        cost_per = float(h["cost_per_point"])
-        current_per = float(h["current_price_per_point"])
+        pts = float(h.get("points_purchased") or 0)
+        cost_per = float(h.get("cost_per_point") or 0)
+        current_per = float(h.get("current_price_per_point") or 0)
         cost_basis = round(pts * cost_per, 2)
         current_value = round(pts * current_per, 2)
         unrealized_gain = round(current_value - cost_basis, 2)
-        royalties = float(h["royalties_earned"])
+        royalties = float(h.get("royalties_earned") or 0)
         total_cost_basis += cost_basis
         total_current_value += current_value
         total_royalties += royalties
 
-        holding_ends = h["holding_period_ends"]
-        tradeable = h["status"] == "tradeable" or (holding_ends and holding_ends <= now)
+        holding_ends = h.get("holding_period_ends")
+        tradeable = h.get("status") == "tradeable" or (holding_ends and holding_ends <= now)
         items.append({
             "echo_point_id": str(h["id"]),
             "track_id": str(h["track_id"]),
-            "track_title": h["track_title"],
-            "artist_name": h["artist_name"],
+            "track_title": h.get("track_title"),
+            "artist_name": h.get("artist_name"),
             "points_owned": pts,
             "cost_per_point": cost_per,
             "cost_basis": cost_basis,
@@ -377,7 +383,7 @@ async def get_portfolio(
             "current_value": current_value,
             "unrealized_gain": unrealized_gain,
             "royalties_earned": royalties,
-            "status": h["status"],
+            "status": h.get("status"),
             "holding_period_ends": holding_ends.isoformat() if holding_ends else None,
             "tradeable": tradeable,
         })
@@ -559,7 +565,7 @@ async def get_payout_history(
         {"user_id": user_id},
     )
     payouts = result.mappings().all()
-    total_earned = sum(float(p["payout_amount"]) for p in payouts if p["status"] == "processed")
+    total_earned = sum(float(p.get("payout_amount") or 0) for p in payouts if p.get("status") == "processed")
 
     return {
         "user_id": user_id,

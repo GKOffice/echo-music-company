@@ -20,43 +20,53 @@ async def get_label_overview(
     current_user: TokenData = Depends(get_current_user),
 ):
     """Full label overview — signed artists, streams, revenue, points, demos."""
-    result = await db.execute(text("""
-        SELECT
-            (SELECT COUNT(*) FROM artists WHERE status = 'signed') as signed_artists,
-            (SELECT COUNT(*) FROM artists WHERE status = 'prospect') as prospects,
-            (SELECT COUNT(*) FROM releases WHERE status = 'released') as released_tracks,
-            (SELECT COUNT(*) FROM releases) as total_releases,
-            (SELECT COALESCE(SUM(streams_total), 0) FROM releases) as total_streams,
-            (SELECT COALESCE(SUM(revenue_total), 0) FROM releases) as total_revenue,
-            (SELECT COUNT(*) FROM echo_points WHERE status = 'active') as active_point_holders,
-            (SELECT COALESCE(SUM(points_purchased), 0) FROM echo_points) as total_points_sold,
-            (SELECT COALESCE(SUM(price_paid), 0) FROM echo_points) as total_points_revenue,
-            (SELECT COUNT(*) FROM submissions WHERE DATE(created_at) = CURRENT_DATE) as demos_today,
-            (SELECT COUNT(*) FROM submissions WHERE status = 'pending') as demos_pending,
-            (SELECT COUNT(*) FROM hub_beats WHERE status = 'available') as beats_available
-    """))
-    row = result.mappings().fetchone()
-    stats = dict(row)
+    try:
+        result = await db.execute(text("""
+            SELECT
+                (SELECT COUNT(*) FROM artists WHERE status = 'signed') as signed_artists,
+                (SELECT COUNT(*) FROM artists WHERE status = 'prospect') as prospects,
+                (SELECT COUNT(*) FROM releases WHERE status = 'released') as released_tracks,
+                (SELECT COUNT(*) FROM releases) as total_releases,
+                (SELECT COALESCE(SUM(streams_total), 0) FROM releases) as total_streams,
+                (SELECT COALESCE(SUM(revenue_total), 0) FROM releases) as total_revenue,
+                (SELECT COUNT(*) FROM echo_points WHERE status = 'active') as active_point_holders,
+                (SELECT COALESCE(SUM(points_purchased), 0) FROM echo_points) as total_points_sold,
+                (SELECT COALESCE(SUM(price_paid), 0) FROM echo_points) as total_points_revenue,
+                (SELECT COUNT(*) FROM submissions WHERE DATE(created_at) = CURRENT_DATE) as demos_today,
+                (SELECT COUNT(*) FROM submissions WHERE status = 'pending') as demos_pending,
+                (SELECT COUNT(*) FROM hub_beats WHERE status = 'available') as beats_available
+        """))
+        row = result.mappings().fetchone()
+        stats = dict(row) if row else {}
 
-    signed = int(stats.get("signed_artists") or 0)
-    total_rev = float(stats.get("total_revenue") or 0)
+        signed = int(stats.get("signed_artists") or 0)
+        total_rev = float(stats.get("total_revenue") or 0)
 
-    return {
-        "signed_artists": signed,
-        "prospects": int(stats.get("prospects") or 0),
-        "released_tracks": int(stats.get("released_tracks") or 0),
-        "total_releases": int(stats.get("total_releases") or 0),
-        "total_streams": int(stats.get("total_streams") or 0),
-        "total_revenue": total_rev,
-        "active_point_holders": int(stats.get("active_point_holders") or 0),
-        "total_points_sold": int(stats.get("total_points_sold") or 0),
-        "total_points_revenue": float(stats.get("total_points_revenue") or 0),
-        "demos_today": int(stats.get("demos_today") or 0),
-        "demos_pending": int(stats.get("demos_pending") or 0),
-        "beats_available": int(stats.get("beats_available") or 0),
-        "avg_revenue_per_artist": round(total_rev / signed, 2) if signed > 0 else 0.0,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
+        return {
+            "signed_artists": signed,
+            "prospects": int(stats.get("prospects") or 0),
+            "released_tracks": int(stats.get("released_tracks") or 0),
+            "total_releases": int(stats.get("total_releases") or 0),
+            "total_streams": int(stats.get("total_streams") or 0),
+            "total_revenue": total_rev,
+            "active_point_holders": int(stats.get("active_point_holders") or 0),
+            "total_points_sold": int(stats.get("total_points_sold") or 0),
+            "total_points_revenue": float(stats.get("total_points_revenue") or 0),
+            "demos_today": int(stats.get("demos_today") or 0),
+            "demos_pending": int(stats.get("demos_pending") or 0),
+            "beats_available": int(stats.get("beats_available") or 0),
+            "avg_revenue_per_artist": round(total_rev / signed, 2) if signed > 0 else 0.0,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception:
+        return {
+            "signed_artists": 0, "prospects": 0, "released_tracks": 0,
+            "total_releases": 0, "total_streams": 0, "total_revenue": 0.0,
+            "active_point_holders": 0, "total_points_sold": 0, "total_points_revenue": 0.0,
+            "demos_today": 0, "demos_pending": 0, "beats_available": 0,
+            "avg_revenue_per_artist": 0.0,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 # ----------------------------------------------------------------
@@ -95,7 +105,8 @@ async def get_artist_dashboard(
                 FROM echo_points WHERE artist_id = :id AND status = 'active'"""),
         {"id": artist_id},
     )
-    points = dict(points_result.mappings().fetchone())
+    points_row = points_result.mappings().fetchone()
+    points = dict(points_row) if points_row else {"holders": 0, "total_sold": 0, "total_revenue": 0}
 
     # Growth trend
     now = datetime.now(timezone.utc)
@@ -109,7 +120,8 @@ async def get_artist_dashboard(
                FROM royalties WHERE artist_id = :id"""),
         {"id": artist_id, "first_this": first_this_month, "first_last": first_last_month},
     )
-    trend = dict(trend_result.mappings().fetchone())
+    trend_row = trend_result.mappings().fetchone()
+    trend = dict(trend_row) if trend_row else {"this_month": 0, "last_month": 0}
 
     this_month = float(trend.get("this_month") or 0)
     last_month = float(trend.get("last_month") or 0)
@@ -117,8 +129,8 @@ async def get_artist_dashboard(
     if last_month > 0:
         growth_pct = round(((this_month - last_month) / last_month) * 100, 1)
 
-    advance = float(artist["advance_amount"] or 0)
-    recoup_balance = float(artist["recoupment_balance"] or 0)
+    advance = float(artist.get("advance_amount") or 0)
+    recoup_balance = float(artist.get("recoupment_balance") or 0)
     recoup_pct = 0.0
     if advance > 0:
         recoup_pct = round(max(0, (advance - recoup_balance) / advance * 100), 1)
@@ -197,7 +209,8 @@ async def get_release_performance(
                 FROM echo_points WHERE release_id = :id AND status = 'active'"""),
         {"id": release_id},
     )
-    points = dict(points_result.mappings().fetchone())
+    rel_points_row = points_result.mappings().fetchone()
+    points = dict(rel_points_row) if rel_points_row else {"holders": 0, "total_points": 0}
 
     total_streams = int(release.get("streams_total") or 0)
     days_live = 1
@@ -241,7 +254,8 @@ async def get_points_analytics(
                COALESCE(SUM(price_paid), 0) as total_revenue
         FROM echo_points WHERE status = 'active'
     """))
-    totals = dict(totals_result.mappings().fetchone())
+    totals_row = totals_result.mappings().fetchone()
+    totals = dict(totals_row) if totals_row else {"total_holders": 0, "total_points": 0, "total_revenue": 0}
 
     drops_result = await db.execute(text("""
         SELECT ep.release_id, r.title, a.name as artist_name,
@@ -262,7 +276,8 @@ async def get_points_analytics(
                COALESCE(SUM(points_redeemed), 0) as redeemed
         FROM echo_points
     """))
-    exchange = dict(exchange_result.mappings().fetchone())
+    exchange_row = exchange_result.mappings().fetchone()
+    exchange = dict(exchange_row) if exchange_row else {"purchased": 0, "redeemed": 0}
 
     demo_result = await db.execute(text("""
         SELECT u.country, COUNT(DISTINCT ep.user_id) as holders
@@ -345,7 +360,8 @@ async def get_weekly_report(
             (SELECT COUNT(*) FROM submissions WHERE DATE(created_at) = CURRENT_DATE) as demos_today,
             (SELECT COUNT(*) FROM hub_beats WHERE status = 'available') as beats_available
     """))
-    metrics = dict(overview_result.mappings().fetchone())
+    metrics_row = overview_result.mappings().fetchone()
+    metrics = dict(metrics_row) if metrics_row else {}
 
     # Top performer this week
     top_result = await db.execute(text("""
