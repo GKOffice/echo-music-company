@@ -75,7 +75,7 @@ const HOW_IT_WORKS = [
   { step: "03", title: "License Included", description: "Every purchase includes a license key for personal or commercial use.", icon: "📄" },
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = typeof window !== "undefined" && window.location.hostname !== "localhost" ? "https://api-production-14b6.up.railway.app" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
 export default function StorePage() {
   const [selectedProduct, setSelectedProduct] = useState<MerchItem | null>(null);

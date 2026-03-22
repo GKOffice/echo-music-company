@@ -1,5 +1,4 @@
-// Always use the public API URL directly — bypasses Next.js proxy
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_URL } from "./config";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
