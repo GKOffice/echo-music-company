@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "../../components/Navbar";
+import { useAuth } from "@/contexts/AuthContext";
 import { fetchPlatformStats, formatNumber } from "../../lib/api";
 
 const FALLBACK_STATS = [
@@ -223,8 +225,16 @@ function SocialProofSection() {
 }
 
 export default function PlatformPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const heroRef = useRef<HTMLDivElement>(null);
   const [tickerOffset, setTickerOffset] = useState(0);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/auth/login?next=/platform");
+    }
+  }, [loading, user, router]);
 
   const { data: apiStats } = useQuery({
     queryKey: ["platform-stats"],

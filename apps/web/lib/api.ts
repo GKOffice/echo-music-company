@@ -360,13 +360,6 @@ export function tierBadge(tier: Artist["tier"]): string {
 
 // ─── Additional Interfaces ─────────────────────────────────────────────────────
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: "artist" | "fan" | "producer" | "songwriter";
-}
-
 export interface Listing {
   id: string;
   listing_type: string;
@@ -404,47 +397,6 @@ export interface Songwriter {
   songs_registered: number;
   monthly_earnings: number;
   bio?: string;
-}
-
-// ─── Auth API Functions ────────────────────────────────────────────────────────
-
-export async function apiLogin(
-  email: string,
-  password: string
-): Promise<{ token: string; user: User }> {
-  const res = await fetch(`${API_URL}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) throw new Error("Login failed");
-  return res.json();
-}
-
-export async function apiSignup(
-  name: string,
-  email: string,
-  password: string
-): Promise<{ token: string; user: User }> {
-  const res = await fetch(`${API_URL}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password }),
-  });
-  if (!res.ok) throw new Error("Signup failed");
-  return res.json();
-}
-
-export async function apiMe(token: string): Promise<User | null> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
 }
 
 // ─── Payment API Functions ─────────────────────────────────────────────────────

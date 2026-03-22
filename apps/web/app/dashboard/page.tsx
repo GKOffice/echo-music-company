@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "../../components/Navbar";
 import { Skeleton } from "../../components/Skeleton";
@@ -27,7 +29,22 @@ function statusBadge(status: string) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/auth/login?next=/dashboard");
+    }
+  }, [loading, user, router]);
+
+  if (loading || !user) {
+    return (
+      <main className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-[#8b5cf6] border-t-transparent animate-spin" />
+      </main>
+    );
+  }
 
   const { data: artist, isLoading: artistLoading } = useQuery({
     queryKey: ["my-artist"],
@@ -70,7 +87,7 @@ export default function DashboardPage() {
               Welcome back,{" "}
               {artistLoading
                 ? <span className="inline-block w-24 h-4 bg-[#1a1a24] rounded animate-pulse align-middle" />
-                : user?.name ?? artist?.name ?? "Artist"}
+                : artist?.name ?? user?.email ?? "Artist"}
             </p>
           </div>
           <div className="flex items-center gap-2 text-sm">

@@ -90,7 +90,8 @@ export default function Navbar() {
     router.push("/");
   }
 
-  const userInitial = user?.name?.[0]?.toUpperCase() ?? "?";
+  const displayName = user?.email?.split("@")[0] ?? "";
+  const userInitial = displayName?.[0]?.toUpperCase() ?? "?";
 
   return (
     <>
@@ -244,7 +245,7 @@ export default function Navbar() {
                   <div className="w-8 h-8 rounded-full bg-[#8b5cf6] flex items-center justify-center text-white font-bold text-sm">
                     {userInitial}
                   </div>
-                  <span className="text-sm text-text-primary hidden lg:block">{user.name}</span>
+                  <span className="text-sm text-text-primary hidden lg:block">{displayName}</span>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`text-text-muted transition-transform ${dropdownOpen ? "rotate-180" : ""}`}>
                     <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -252,7 +253,7 @@ export default function Navbar() {
                 {dropdownOpen && (
                   <div className="absolute right-0 top-12 w-52 bg-surface border border-border rounded-xl shadow-xl overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-border">
-                      <div className="text-sm font-semibold text-text-primary truncate">{user.name}</div>
+                      <div className="text-sm font-semibold text-text-primary truncate">{displayName}</div>
                       <div className="text-xs text-text-muted truncate">{user.email}</div>
                     </div>
                     {[
@@ -359,7 +360,7 @@ export default function Navbar() {
               ) : user ? (
                 <>
                   <div className="px-4 py-2 text-sm text-text-muted">
-                    Signed in as <span className="text-text-primary">{user.name}</span>
+                    Signed in as <span className="text-text-primary">{displayName}</span>
                   </div>
                   <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="block px-4 py-3 text-sm text-text-muted hover:text-text-primary hover:bg-surface rounded-lg transition-colors">Dashboard</Link>
                   <Link href="/fan/dashboard" onClick={() => setMobileOpen(false)} className="block px-4 py-3 text-sm text-text-muted hover:text-text-primary hover:bg-surface rounded-lg transition-colors">Fan Dashboard</Link>

@@ -183,5 +183,20 @@ async def logout(current_user: TokenData = Depends(get_current_user)):
 
 
 @router.get("/me")
-async def me(current_user: TokenData = Depends(get_current_user)):
-    return {"user_id": current_user.user_id, "role": current_user.role}
+async def me(
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import text
+
+    result = await db.execute(
+        text("SELECT id, email, role FROM users WHERE id = :id"),
+        {"id": current_user.user_id},
+    )
+    user = result.fetchone()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    return {"id": str(user.id), "email": user.email, "role": user.role}

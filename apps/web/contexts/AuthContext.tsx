@@ -1,21 +1,22 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import {
+  login as loginApi,
+  register as registerApi,
+  getMe,
+  logout as logoutApi,
+  getToken,
+  type AuthUser,
+} from "@/lib/auth";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: "artist" | "fan" | "producer" | "songwriter";
-}
+export type User = AuthUser;
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (email: string, password: string, role: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -25,67 +26,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // On mount: check for existing token and fetch user
   useEffect(() => {
-    const token = localStorage.getItem("melodio_token");
+    const token = getToken();
     if (!token) {
       setLoading(false);
       return;
     }
-    fetch(`${API_URL}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
+    getMe(token)
       .then((data) => { if (data) setUser(data); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   async function login(email: string, password: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const res = await fetch(`${API_URL}/api/v1/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        return { success: false, error: err.detail || "Invalid email or password" };
-      }
-      const data = await res.json();
-      localStorage.setItem("melodio_token", data.token);
-      // Also set cookie for middleware
-      document.cookie = `melodio_token=${data.token}; path=/; max-age=2592000`;
-      setUser(data.user);
-      return { success: true };
-    } catch {
-      return { success: false, error: "Connection error. Please try again." };
+    const result = await loginApi(email, password);
+    if (!result.success) {
+      return { success: false, error: result.error };
     }
+    // Fetch user profile after successful login
+    const me = await getMe(result.token);
+    if (me) {
+      setUser(me);
+    } else {
+      // Fallback: we have a valid token but /me failed — set minimal user
+      setUser({ id: "", email, role: "artist" });
+    }
+    return { success: true };
   }
 
-  async function signup(name: string, email: string, password: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const res = await fetch(`${API_URL}/api/v1/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        return { success: false, error: err.detail || "Could not create account" };
-      }
-      const data = await res.json();
-      localStorage.setItem("melodio_token", data.token);
-      document.cookie = `melodio_token=${data.token}; path=/; max-age=2592000`;
-      setUser(data.user);
-      return { success: true };
-    } catch {
-      return { success: false, error: "Connection error. Please try again." };
+  async function signup(email: string, password: string, role: string): Promise<{ success: boolean; error?: string }> {
+    const result = await registerApi(email, password, role);
+    if (!result.success) {
+      return { success: false, error: result.error };
     }
+    // Fetch user profile after successful registration
+    const me = await getMe(result.token);
+    if (me) {
+      setUser(me);
+    } else {
+      setUser({ id: "", email, role });
+    }
+    return { success: true };
   }
 
   function logout() {
-    localStorage.removeItem("melodio_token");
-    document.cookie = "melodio_token=; path=/; max-age=0";
+    logoutApi();
     setUser(null);
   }
 

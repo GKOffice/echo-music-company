@@ -9,11 +9,10 @@ import Navbar from "@/components/Navbar";
 export default function SignupPage() {
   const router = useRouter();
   const { signup } = useAuth();
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [role, setRole] = useState<"fan" | "artist" | "producer" | "songwriter">("fan");
+  const [role, setRole] = useState<"artist" | "producer" | "developer">("artist");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -22,11 +21,11 @@ export default function SignupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    if (!email || !password) { setError("Please fill in all fields."); return; }
     if (password !== confirm) { setError("Passwords don't match."); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     setLoading(true);
-    const result = await signup(name, email, password);
+    const result = await signup(email, password, role);
     setLoading(false);
     if (result.success) {
       router.push("/dashboard");
@@ -36,10 +35,9 @@ export default function SignupPage() {
   }
 
   const roles = [
-    { value: "fan", label: "Fan", desc: "Buy points, earn royalties" },
     { value: "artist", label: "Artist", desc: "Submit music, drop points" },
     { value: "producer", label: "Producer", desc: "Sell beats, find artists" },
-    { value: "songwriter", label: "Songwriter", desc: "Register songs, find co-writers" },
+    { value: "developer", label: "Developer", desc: "Build on the Melodio API" },
   ] as const;
 
   return (
@@ -98,10 +96,6 @@ export default function SignupPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-[#e8e8f0] mb-1.5">Full Name</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className={inputClass} required />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-[#e8e8f0] mb-1.5">Email</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={inputClass} required />

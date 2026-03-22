@@ -310,7 +310,7 @@ export default function AmbassadorPage() {
                 </span>
               </div>
               <p className="text-[#9ca3af] text-sm">
-                {user?.name ? `Welcome back, ${user.name}. ` : ""}
+                {user?.email ? `Welcome back, ${user.email.split("@")[0]}. ` : ""}
                 You&apos;re earning {tierConfig.rate}% commission on every active referral.
               </p>
             </div>
