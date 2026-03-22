@@ -68,6 +68,8 @@ CREATE TABLE artists (
   brand_guidelines_url TEXT,
   advance_amount DECIMAL(12,2) DEFAULT 0,
   recoupment_balance DECIMAL(12,2) DEFAULT 0,
+  stripe_connect_id VARCHAR(255),
+  stripe_connect_status VARCHAR(50) DEFAULT 'not_started',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

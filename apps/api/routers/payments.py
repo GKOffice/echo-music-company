@@ -19,6 +19,13 @@ from typing import Optional
 
 from database import get_db
 from routers.auth import get_current_user, TokenData
+from services.stripe_connect import (
+    create_connect_account,
+    create_onboarding_link,
+    get_account_status,
+    create_payout,
+    get_payout_history,
+)
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
@@ -50,6 +57,17 @@ class ConfirmPaymentRequest(BaseModel):
 class RefundRequest(BaseModel):
     payment_intent_id: str
     reason: str
+
+
+class ConnectOnboardRequest(BaseModel):
+    refresh_url: str = "https://melodio.io/connect/refresh"
+    return_url: str = "https://melodio.io/connect/complete"
+
+
+class ConnectPayoutRequest(BaseModel):
+    artist_id: str
+    amount_cents: int
+    currency: str = "usd"
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -362,3 +380,129 @@ async def refund_payment(
         "amount_refunded": refund.amount,
         "status": refund.status,
     }
+
+
+# ── Stripe Connect ────────────────────────────────────────────────────────────
+
+@router.post("/connect/onboard")
+async def connect_onboard(
+    body: ConnectOnboardRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Create a Stripe Connect Express account for the current artist and return an onboarding link."""
+    artist_result = await db.execute(
+        text("SELECT id, name, stripe_connect_id FROM artists WHERE user_id = :uid::uuid LIMIT 1"),
+        {"uid": current_user.user_id},
+    )
+    artist = artist_result.mappings().first()
+    if not artist:
+        raise HTTPException(status_code=404, detail="No artist profile found for this user")
+
+    account_id = artist.get("stripe_connect_id")
+
+    if not account_id:
+        # Fetch user email for the Connect account
+        user_result = await db.execute(
+            text("SELECT email FROM users WHERE id = :uid::uuid"),
+            {"uid": current_user.user_id},
+        )
+        user = user_result.mappings().first()
+        account = await create_connect_account(user["email"])
+        account_id = account["account_id"]
+
+        await db.execute(
+            text("UPDATE artists SET stripe_connect_id = :acct, stripe_connect_status = 'pending' WHERE id = :aid::uuid"),
+            {"acct": account_id, "aid": str(artist["id"])},
+        )
+        await db.commit()
+
+    onboarding_url = await create_onboarding_link(account_id, body.refresh_url, body.return_url)
+    return {"onboarding_url": onboarding_url, "account_id": account_id}
+
+
+@router.get("/connect/status")
+async def connect_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Check the current artist's Stripe Connect account status."""
+    artist_result = await db.execute(
+        text("SELECT id, stripe_connect_id, stripe_connect_status FROM artists WHERE user_id = :uid::uuid LIMIT 1"),
+        {"uid": current_user.user_id},
+    )
+    artist = artist_result.mappings().first()
+    if not artist:
+        raise HTTPException(status_code=404, detail="No artist profile found")
+
+    account_id = artist.get("stripe_connect_id")
+    if not account_id:
+        return {"status": "not_started", "account_id": None}
+
+    status = await get_account_status(account_id)
+
+    # Update local status based on Stripe data
+    new_status = "active" if status["payouts_enabled"] else "pending"
+    if new_status != artist.get("stripe_connect_status"):
+        await db.execute(
+            text("UPDATE artists SET stripe_connect_status = :status WHERE id = :aid::uuid"),
+            {"status": new_status, "aid": str(artist["id"])},
+        )
+        await db.commit()
+
+    return {
+        "status": new_status,
+        "account_id": account_id,
+        "charges_enabled": status["charges_enabled"],
+        "payouts_enabled": status["payouts_enabled"],
+        "details_submitted": status["details_submitted"],
+    }
+
+
+@router.post("/connect/payout")
+async def connect_payout(
+    body: ConnectPayoutRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Trigger a payout to an artist's Connect account (admin only)."""
+    user_result = await db.execute(
+        text("SELECT role FROM users WHERE id = :uid::uuid"),
+        {"uid": current_user.user_id},
+    )
+    user = user_result.mappings().first()
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    artist_result = await db.execute(
+        text("SELECT id, name, stripe_connect_id, stripe_connect_status FROM artists WHERE id = :aid::uuid"),
+        {"aid": body.artist_id},
+    )
+    artist = artist_result.mappings().first()
+    if not artist:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    if not artist.get("stripe_connect_id"):
+        raise HTTPException(status_code=400, detail="Artist has no Connect account")
+    if artist.get("stripe_connect_status") != "active":
+        raise HTTPException(status_code=400, detail="Artist Connect account is not fully onboarded")
+    if body.amount_cents < 100:
+        raise HTTPException(status_code=400, detail="Minimum payout is $1.00")
+
+    result = await create_payout(artist["stripe_connect_id"], body.amount_cents, body.currency)
+
+    # Log to audit
+    await db.execute(
+        text("""
+            INSERT INTO audit_log (id, action, entity_type, entity_id, performed_by, details)
+            VALUES (:id::uuid, 'payout_created', 'artist', :artist_id::uuid, :admin_id::uuid, :details)
+        """),
+        {
+            "id": str(uuid.uuid4()),
+            "artist_id": body.artist_id,
+            "admin_id": current_user.user_id,
+            "details": json.dumps({"transfer_id": result["transfer_id"], "amount_cents": body.amount_cents}),
+        },
+    )
+    await db.commit()
+
+    return result
