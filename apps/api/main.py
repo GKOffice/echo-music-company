@@ -19,6 +19,7 @@ from routers.growth import router as growth_router
 from routers.onboarding import router as onboarding_router
 from routers.release_pipeline import router as release_pipeline_router
 from routers.admin import router as admin_router
+from routers.kyc import router as kyc_router
 
 load_dotenv()
 
@@ -89,6 +90,7 @@ app.include_router(growth_router, prefix="/api/v1/growth", tags=["growth"])
 app.include_router(onboarding_router, prefix="/api/v1/onboarding", tags=["onboarding"])
 app.include_router(release_pipeline_router, prefix="/api/v1/pipeline", tags=["pipeline"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(kyc_router, prefix="/api/v1/kyc", tags=["kyc"])
 
 
 @app.get("/health", tags=["system"])
