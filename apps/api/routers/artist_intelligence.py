@@ -23,6 +23,7 @@ SPOTIFY_CLIENT_ID    = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY", "")
 GENIUS_ACCESS_TOKEN  = os.getenv("GENIUS_ACCESS_TOKEN", "")
+CHARTMETRIC_API_KEY  = os.getenv("CHARTMETRIC_API_KEY", "")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CACHE HELPERS
@@ -509,6 +510,67 @@ async def fetch_bandsintown(name: str) -> dict:
         return {"source": "bandsintown", "available": False, "reason": str(e)}
 
 
+async def fetch_chartmetric(name: str) -> dict:
+    """Chartmetric — monthly listeners, playlist placements, CM score, social stats."""
+    if not CHARTMETRIC_API_KEY:
+        return {"source": "chartmetric", "available": False, "reason": "No API key"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            # Get access token
+            token_resp = await client.post(
+                "https://api.chartmetric.com/api/token",
+                json={"refreshtoken": CHARTMETRIC_API_KEY},
+            )
+            if token_resp.status_code != 200:
+                return {"source": "chartmetric", "available": False, "reason": "Token exchange failed"}
+            access_token = token_resp.json().get("token", "")
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            # Search artist
+            search_resp = await client.get(
+                "https://api.chartmetric.com/api/search",
+                params={"q": name, "type": "artists", "limit": 1},
+                headers=headers,
+            )
+            if search_resp.status_code != 200:
+                return {"source": "chartmetric", "available": False, "reason": f"Search HTTP {search_resp.status_code}"}
+
+            artists = search_resp.json().get("obj", {}).get("artists", [])
+            if not artists:
+                return {"source": "chartmetric", "available": False, "reason": "Artist not found"}
+
+            a = artists[0]
+            cm_id = a.get("id")
+
+            # Get detailed stats
+            detail_resp = await client.get(
+                f"https://api.chartmetric.com/api/artist/{cm_id}",
+                headers=headers,
+            )
+            detail = detail_resp.json().get("obj", {}) if detail_resp.status_code == 200 else {}
+
+            return {
+                "source": "chartmetric",
+                "available": True,
+                "cm_id": cm_id,
+                "name": a.get("name"),
+                "cm_score": round(a.get("cm_artist_score", 0), 1),
+                "sp_monthly_listeners": a.get("sp_monthly_listeners"),
+                "sp_followers": a.get("sp_followers"),
+                "verified": a.get("verified", False),
+                "image_url": a.get("image_url"),
+                "country": detail.get("country"),
+                "city": detail.get("city"),
+                "career_stage": detail.get("career_stage"),
+                "playlist_total_reach": detail.get("sp_playlist_total_reach"),
+                "tiktok_followers": detail.get("tiktok_followers"),
+                "instagram_followers": detail.get("instagram_followers"),
+                "youtube_subscribers": detail.get("youtube_channel_subscribers"),
+            }
+    except Exception as e:
+        return {"source": "chartmetric", "available": False, "reason": str(e)[:80]}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AI ANALYSIS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -672,7 +734,7 @@ async def analyze_with_claude(artist_name: str, raw_data: dict) -> dict:
 
 async def _build_report(artist_name: str, request: Request) -> dict:
     (spotify, youtube, genius, musicbrainz, wikipedia,
-     bandsintown, soundcloud, lastfm, itunes, deezer, discogs) = await asyncio.gather(
+     bandsintown, soundcloud, lastfm, itunes, deezer, discogs, chartmetric) = await asyncio.gather(
         fetch_spotify(artist_name),
         fetch_youtube(artist_name),
         fetch_genius(artist_name),
@@ -684,6 +746,7 @@ async def _build_report(artist_name: str, request: Request) -> dict:
         fetch_itunes(artist_name),
         fetch_deezer(artist_name),
         fetch_discogs(artist_name),
+        fetch_chartmetric(artist_name),
     )
 
     raw_data = {
@@ -698,6 +761,7 @@ async def _build_report(artist_name: str, request: Request) -> dict:
         "itunes": itunes,
         "deezer": deezer,
         "discogs": discogs,
+        "chartmetric": chartmetric,
     }
 
     analysis = await analyze_with_claude(artist_name, raw_data)

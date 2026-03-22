@@ -511,8 +511,45 @@ class ARAgent(BaseAgent):
     # Hero Skills
     # ----------------------------------------------------------------
 
+    async def _fetch_chartmetric(self, artist_name: str) -> dict:
+        """Fetch real Chartmetric data for an artist."""
+        api_key = os.environ.get("CHARTMETRIC_API_KEY", "")
+        if not api_key:
+            return {}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                token_resp = await client.post(
+                    "https://api.chartmetric.com/api/token",
+                    json={"refreshtoken": api_key},
+                )
+                if token_resp.status_code != 200:
+                    return {}
+                access_token = token_resp.json().get("token", "")
+                headers = {"Authorization": f"Bearer {access_token}"}
+                search_resp = await client.get(
+                    "https://api.chartmetric.com/api/search",
+                    params={"q": artist_name, "type": "artists", "limit": 1},
+                    headers=headers,
+                )
+                if search_resp.status_code != 200:
+                    return {}
+                artists = search_resp.json().get("obj", {}).get("artists", [])
+                if not artists:
+                    return {}
+                a = artists[0]
+                return {
+                    "cm_id": a.get("id"),
+                    "cm_score": round(a.get("cm_artist_score", 0), 1),
+                    "sp_monthly_listeners": a.get("sp_monthly_listeners"),
+                    "sp_followers": a.get("sp_followers"),
+                    "verified": a.get("verified", False),
+                }
+        except Exception as e:
+            logger.warning(f"[A&R] Chartmetric error: {e}")
+            return {}
+
     async def _task_momentum_scan(self, task: AgentTask) -> dict:
-        """Momentum Detector — scores artist buzz from free public APIs."""
+        """Momentum Detector — scores artist buzz from public APIs + Chartmetric."""
         artist_name = task.payload.get("artist_name", "")
         timeframe_days = int(task.payload.get("timeframe_days", 30))
 
@@ -607,6 +644,27 @@ class ARAgent(BaseAgent):
 
         momentum_score = visibility_pts + velocity_pts + uniqueness_pts
 
+        # --- Chartmetric (real data boost) ---
+        cm_data = await self._fetch_chartmetric(artist_name)
+        cm_score = cm_data.get("cm_score", 0)
+        sp_monthly = cm_data.get("sp_monthly_listeners", 0) or 0
+        cm_boost = 0
+        if cm_score >= 85:
+            cm_boost = 30
+        elif cm_score >= 70:
+            cm_boost = 20
+        elif cm_score >= 50:
+            cm_boost = 10
+        elif cm_score > 0:
+            cm_boost = 5
+        if sp_monthly >= 1_000_000:
+            cm_boost += 20
+        elif sp_monthly >= 100_000:
+            cm_boost += 10
+        elif sp_monthly >= 10_000:
+            cm_boost += 5
+        momentum_score = min(100, momentum_score + cm_boost)
+
         if momentum_score >= 70:
             recommendation = "HIGH MOMENTUM — flag for immediate review"
         elif momentum_score >= 40:
@@ -623,6 +681,7 @@ class ARAgent(BaseAgent):
                 "releases_last_12m": release_count_12m,
                 "name_uniqueness": name_uniqueness,
                 "mb_found": mb_found,
+                "chartmetric": cm_data if cm_data else "not available",
             },
             "recommendation": recommendation,
             "hero_skill": "momentum_detector",
