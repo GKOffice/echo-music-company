@@ -44,7 +44,8 @@ async def receive_webhook(request: Request):
         sig_header = request.headers.get("X-Hub-Signature-256", "")
         expected = "sha256=" + hmac.new(
             APP_SECRET.encode(), body, hashlib.sha256
-        ).hexdigest()
+        ).hexdigest() if hasattr(hmac, 'new') else "sha256=" + hmac.new(
+            APP_SECRET.encode(), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig_header, expected):
             raise HTTPException(status_code=403, detail="Invalid signature")
 
