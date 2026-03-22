@@ -257,29 +257,29 @@ export default function IntelligenceReportPage() {
         <section className="mb-6">
           <h2 className="text-lg font-bold text-white mb-4">Platform Stats</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {(stats.spotify?.available || stats.chartmetric?.available) && (
+            {(stats.spotify || stats.chartmetric) && (
               <StatCard icon="🎵" platform="Spotify" stats={[
                 {
                   label: "Followers",
-                  value: stats.spotify?.followers
+                  value: (stats.spotify?.followers && stats.spotify.followers > 0)
                     ? fmt(stats.spotify.followers)
-                    : stats.chartmetric?.sp_followers
+                    : (stats.chartmetric?.sp_followers && stats.chartmetric.sp_followers > 0)
                     ? fmt(stats.chartmetric.sp_followers)
                     : "—"
                 },
                 {
                   label: "Monthly Listeners",
-                  value: stats.chartmetric?.sp_monthly_listeners
+                  value: (stats.chartmetric?.sp_monthly_listeners && stats.chartmetric.sp_monthly_listeners > 0)
                     ? fmt(stats.chartmetric.sp_monthly_listeners)
-                    : stats.spotify?.monthly_listeners
+                    : (stats.spotify?.monthly_listeners && stats.spotify.monthly_listeners > 0)
                     ? fmt(stats.spotify.monthly_listeners)
                     : "—"
                 },
                 {
                   label: "Popularity",
-                  value: stats.spotify?.popularity
+                  value: (stats.spotify?.popularity && stats.spotify.popularity > 0)
                     ? `${stats.spotify.popularity}/100`
-                    : stats.chartmetric?.cm_score
+                    : (stats.chartmetric?.cm_score && stats.chartmetric.cm_score > 0)
                     ? `${Math.round(stats.chartmetric.cm_score)}/100 (CM)`
                     : "—"
                 },

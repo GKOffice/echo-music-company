@@ -852,6 +852,27 @@ async def _build_report(artist_name: str, request: Request) -> dict:
             "tracks": soundcloud.get("track_count", 0),
             "url": soundcloud.get("url"),
         }
+    # Always include chartmetric if available — primary source for listener/follower data
+    if chartmetric.get("available"):
+        platform_stats["chartmetric"] = {
+            "cm_score": chartmetric.get("cm_score", 0),
+            "sp_monthly_listeners": chartmetric.get("sp_monthly_listeners", 0),
+            "sp_followers": chartmetric.get("sp_followers", 0),
+            "tiktok_followers": chartmetric.get("tiktok_followers"),
+            "instagram_followers": chartmetric.get("instagram_followers"),
+            "youtube_subscribers": chartmetric.get("youtube_subscribers"),
+            "playlist_total_reach": chartmetric.get("playlist_total_reach"),
+            "career_stage": chartmetric.get("career_stage"),
+            "available": True,
+        }
+    # Also enrich spotify stats with chartmetric listener data if spotify followers are 0
+    if "spotify" in platform_stats and chartmetric.get("available"):
+        if not platform_stats["spotify"].get("followers") and chartmetric.get("sp_followers"):
+            platform_stats["spotify"]["followers"] = chartmetric.get("sp_followers", 0)
+        if chartmetric.get("sp_monthly_listeners"):
+            platform_stats["spotify"]["monthly_listeners"] = chartmetric.get("sp_monthly_listeners", 0)
+        if not platform_stats["spotify"].get("popularity") and chartmetric.get("cm_score"):
+            platform_stats["spotify"]["popularity"] = int(chartmetric.get("cm_score", 0))
 
     sources_used = [k for k, v in raw_data.items() if v.get("available")]
     sources_unavailable = [
