@@ -14,6 +14,7 @@ from routers.fan_intelligence import router as fan_intelligence_router
 from routers.artist_intelligence import router as artist_intelligence_router
 from routers.connections import router as connections_router
 from routers.whatsapp import router as whatsapp_router
+from routers.waitlist import router as waitlist_router
 
 load_dotenv()
 
@@ -67,6 +68,7 @@ app.include_router(fan_intelligence_router, prefix="/api/v1/fan-intelligence", t
 app.include_router(artist_intelligence_router, prefix="/api/v1/intelligence", tags=["artist-intelligence"])
 app.include_router(connections_router, prefix="/api/v1/connections", tags=["connections"])
 app.include_router(whatsapp_router)
+app.include_router(waitlist_router, prefix="/api/v1/waitlist", tags=["waitlist"])
 
 
 @app.get("/health", tags=["system"])
