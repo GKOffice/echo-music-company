@@ -541,3 +541,82 @@ CREATE INDEX idx_digital_purchases_token ON digital_purchases(download_token);
 
 CREATE TRIGGER trg_digital_products_updated_at BEFORE UPDATE ON digital_products
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- Deal Room (missing tables)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS deal_listings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    creator_id UUID NOT NULL,
+    creator_type VARCHAR(20) DEFAULT 'artist',
+    listing_type VARCHAR(50) NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    track_id UUID REFERENCES tracks(id),
+    release_id UUID REFERENCES releases(id),
+    points_qty DECIMAL(8,4),
+    asking_price DECIMAL(12,2),
+    accept_points BOOLEAN DEFAULT TRUE,
+    accept_cash BOOLEAN DEFAULT TRUE,
+    points_price DECIMAL(12,2),
+    genre VARCHAR(100),
+    mood VARCHAR(100),
+    bpm_min DECIMAL(6,2),
+    bpm_max DECIMAL(6,2),
+    expires_at TIMESTAMPTZ,
+    status VARCHAR(20) DEFAULT 'active',
+    views INT DEFAULT 0,
+    closed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS deal_offers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    listing_id UUID NOT NULL REFERENCES deal_listings(id),
+    buyer_id UUID NOT NULL,
+    buyer_type VARCHAR(20) DEFAULT 'fan',
+    offer_type VARCHAR(20) DEFAULT 'cash',
+    cash_amount DECIMAL(12,2),
+    points_qty DECIMAL(8,4),
+    message TEXT,
+    status VARCHAR(20) DEFAULT 'pending',
+    responded_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    stripe_payment_intent_id VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS deals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    listing_id UUID NOT NULL REFERENCES deal_listings(id),
+    offer_id UUID REFERENCES deal_offers(id),
+    seller_id UUID NOT NULL,
+    buyer_id UUID NOT NULL,
+    deal_type VARCHAR(50),
+    track_id UUID REFERENCES tracks(id),
+    cash_paid DECIMAL(12,2) DEFAULT 0,
+    points_paid DECIMAL(8,4) DEFAULT 0,
+    status VARCHAR(30) DEFAULT 'pending_contract',
+    contract_url TEXT,
+    stripe_payment_intent_id VARCHAR(255),
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS deal_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_offer_id UUID REFERENCES deal_offers(id),
+    sender_id UUID NOT NULL,
+    message TEXT,
+    attachment_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_deal_listings_creator ON deal_listings(creator_id);
+CREATE INDEX IF NOT EXISTS idx_deal_listings_status ON deal_listings(status);
+CREATE INDEX IF NOT EXISTS idx_deal_offers_listing ON deal_offers(listing_id);
+CREATE INDEX IF NOT EXISTS idx_deal_offers_buyer ON deal_offers(buyer_id);
+CREATE INDEX IF NOT EXISTS idx_deals_seller ON deals(seller_id);
+CREATE INDEX IF NOT EXISTS idx_deals_buyer ON deals(buyer_id);

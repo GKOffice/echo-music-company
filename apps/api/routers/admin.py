@@ -212,3 +212,46 @@ async def post_send_weekly_digest(
         "sent_to": result.get("sent_to"),
         "period": result.get("period"),
     }
+
+
+@router.post("/migrate-deals-full")
+async def migrate_deals_full(
+    current_user: TokenData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create all missing deal_room tables: deals + deal_messages."""
+    try:
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS deals (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                listing_id UUID NOT NULL REFERENCES deal_listings(id),
+                offer_id UUID REFERENCES deal_offers(id),
+                seller_id UUID NOT NULL,
+                buyer_id UUID NOT NULL,
+                deal_type VARCHAR(50),
+                track_id UUID REFERENCES tracks(id),
+                cash_paid DECIMAL(12,2) DEFAULT 0,
+                points_paid DECIMAL(8,4) DEFAULT 0,
+                status VARCHAR(30) DEFAULT 'pending_contract',
+                contract_url TEXT,
+                stripe_payment_intent_id VARCHAR(255),
+                completed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS deal_messages (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                deal_offer_id UUID REFERENCES deal_offers(id),
+                sender_id UUID NOT NULL,
+                message TEXT,
+                attachment_url TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await db.execute(text("CREATE INDEX IF NOT EXISTS idx_deals_seller ON deals(seller_id)"))
+        await db.execute(text("CREATE INDEX IF NOT EXISTS idx_deals_buyer ON deals(buyer_id)"))
+        await db.commit()
+        return {"status": "complete", "tables": ["deals", "deal_messages"]}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
