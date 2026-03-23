@@ -98,7 +98,7 @@ async def get_trending(
     db:        AsyncSession   = Depends(get_db),
 ):
     result = await db.execute(
-        text("SELECT id, name, genre, ar_score FROM artists WHERE status = 'active' LIMIT 200")
+        text("SELECT id, name, genre, echo_score FROM artists WHERE status = 'active' LIMIT 200")
     )
     rows = [_serialize(r) for r in result.fetchall()]
 
@@ -108,7 +108,7 @@ async def get_trending(
         if genre and genre.lower() not in ag.lower():
             continue
         dims = _mock_momentum(str(a.get("id")))
-        db_ar = float(a.get("ar_score") or 0)
+        db_ar = float(a.get("echo_score") or 0)
         if db_ar > 0:
             dims["ar_score"] = int(min(db_ar, 100))
         composite = int(
@@ -192,7 +192,7 @@ async def get_recommendations(
 
     # Pull active artists
     result = await db.execute(
-        text("SELECT id, name, genre, ar_score FROM artists WHERE status = 'active' AND ar_score > 50 LIMIT 100")
+        text("SELECT id, name, genre, echo_score FROM artists WHERE status = 'active' AND echo_score > 50 LIMIT 100")
     )
     artists = [_serialize(r) for r in result.fetchall()]
 
@@ -206,7 +206,7 @@ async def get_recommendations(
             continue
 
         dims = _mock_momentum(aid)
-        db_ar = float(a.get("ar_score") or 0)
+        db_ar = float(a.get("echo_score") or 0)
         if db_ar > 0:
             dims["ar_score"] = int(min(db_ar, 100))
         composite = int(
@@ -275,7 +275,7 @@ async def get_artist_score(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        text("SELECT id, name, genre, ar_score FROM artists WHERE id = :aid"),
+        text("SELECT id, name, genre, echo_score FROM artists WHERE id = :aid"),
         {"aid": artist_id},
     )
     row = result.fetchone()
@@ -285,7 +285,7 @@ async def get_artist_score(
 
     a = _serialize(row)
     dims = _mock_momentum(artist_id)
-    db_ar = float(a.get("ar_score") or 0)
+    db_ar = float(a.get("echo_score") or 0)
     if db_ar > 0:
         dims["ar_score"] = int(min(db_ar, 100))
     composite = int(
