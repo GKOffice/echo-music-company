@@ -20,6 +20,7 @@ from routers.onboarding import router as onboarding_router
 from routers.release_pipeline import router as release_pipeline_router
 from routers.admin import router as admin_router
 from routers.kyc import router as kyc_router
+from routers.fan_economy import router as fan_economy_router
 
 load_dotenv()
 
@@ -91,6 +92,7 @@ app.include_router(onboarding_router, prefix="/api/v1/onboarding", tags=["onboar
 app.include_router(release_pipeline_router, prefix="/api/v1/pipeline", tags=["pipeline"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(kyc_router, prefix="/api/v1/kyc", tags=["kyc"])
+app.include_router(fan_economy_router, prefix="/api/v1/fan-economy", tags=["fan-economy"])
 
 
 @app.get("/health", tags=["system"])
