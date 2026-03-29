@@ -15,6 +15,7 @@ export interface Artist {
   growthPct: number;
   holderCount?: number;
   recentBuyers?: number;
+  releaseCount?: number;
 }
 
 export interface Release {
@@ -108,6 +109,7 @@ const MOCK_ARTISTS: Artist[] = [
     growthPct: 34,
     holderCount: 12,
     recentBuyers: 3,
+    releaseCount: 8,
   },
   {
     id: "2",
@@ -123,6 +125,7 @@ const MOCK_ARTISTS: Artist[] = [
     growthPct: 22,
     holderCount: 7,
     recentBuyers: 2,
+    releaseCount: 5,
   },
   {
     id: "3",
@@ -138,6 +141,7 @@ const MOCK_ARTISTS: Artist[] = [
     growthPct: 18,
     holderCount: 5,
     recentBuyers: 1,
+    releaseCount: 3,
   },
   {
     id: "4",
@@ -153,6 +157,7 @@ const MOCK_ARTISTS: Artist[] = [
     growthPct: 11,
     holderCount: 4,
     recentBuyers: 0,
+    releaseCount: 1,
   },
   {
     id: "5",
@@ -168,6 +173,7 @@ const MOCK_ARTISTS: Artist[] = [
     growthPct: 28,
     holderCount: 9,
     recentBuyers: 4,
+    releaseCount: 12,
   },
   {
     id: "6",
@@ -183,6 +189,7 @@ const MOCK_ARTISTS: Artist[] = [
     growthPct: 9,
     holderCount: 2,
     recentBuyers: 0,
+    releaseCount: 2,
   },
 ];
 

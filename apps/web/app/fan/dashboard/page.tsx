@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/Navbar";
 import { Skeleton } from "@/components/Skeleton";
 import { useAuth } from "@/contexts/AuthContext";
+import { FanTierProgress } from "@/components/FanTierProgress";
 
 const API_URL = typeof window !== "undefined" && window.location.hostname !== "localhost" ? "https://api-production-14b6.up.railway.app" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
@@ -654,6 +655,12 @@ export default function FanDashboardPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        {/* Fan Identity */}
+        <section className="mt-8">
+          <h2 className="text-lg font-bold text-[#f9fafb] mb-4">Your Fan Identity</h2>
+          <FanTierProgress totalPoints={portfolio.totalPoints} initial="F" />
         </section>
 
         {/* Fan Economy Features */}

@@ -8,6 +8,7 @@ import Navbar from "@/components/Navbar";
 import { SkeletonGrid } from "@/components/Skeleton";
 import { fetchPoints, formatNumber, tierBadge } from "@/lib/api";
 import type { Artist } from "@/lib/api";
+import { ArtistTierBadge } from "@/components/ArtistTierBadge";
 
 const FILTERS = ["All", "Trending", "New Drops", "Afrobeats", "Hip-Hop", "R&B", "Pop", "Indie"];
 const SORT_OPTIONS = [
@@ -26,9 +27,10 @@ function ArtistCard({ artist, colorIndex }: { artist: Artist; colorIndex: number
     <div className="bg-[#13131a] rounded-xl border border-[#2a2a3a] hover:border-[#8b5cf6] transition-all duration-200 overflow-hidden flex flex-col group">
       <div className="h-40 relative flex items-end p-4" style={{ background: `linear-gradient(135deg, ${color}30 0%, #0a0a0f 100%)` }}>
         <div className="absolute inset-0 flex items-center justify-center text-6xl opacity-20 select-none" aria-hidden>🎵</div>
-        <div className="relative z-10 flex items-center gap-2">
+        <div className="relative z-10 flex items-center gap-2 flex-wrap">
           <span className="text-lg">{tierBadge(artist.tier)}</span>
           <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${color}30`, color }}>{artist.genre}</span>
+          <ArtistTierBadge releaseCount={artist.releaseCount ?? 1} showName={true} size="sm" />
         </div>
         <div className="absolute top-3 right-3 bg-[#0a0a0f]/80 backdrop-blur-sm text-[#f9fafb] text-xs font-bold px-2 py-1 rounded-lg border border-[#2a2a3a]">⚡ {artist.echoScore}</div>
         {artist.recentBuyers && artist.recentBuyers > 0 ? (

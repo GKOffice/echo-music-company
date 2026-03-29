@@ -633,6 +633,11 @@ export default function ArtistProfilePage() {
                   </Link>
                 </div>
               )}
+              <div className="mt-4 pt-4 border-t border-[#2a2a38] text-center">
+                <Link href="/artist/campaigns" className="text-sm text-[#8b5cf6] hover:text-[#a78bfa] transition-colors font-semibold">
+                  📢 Boost your points drop with a Melodio Campaign →
+                </Link>
+              </div>
             </section>
           </div>
 

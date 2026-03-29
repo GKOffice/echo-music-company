@@ -20,6 +20,7 @@ const quickActions = [
   { label: "Drop Points", icon: "💎", href: "/points", color: "#10b981" },
   { label: "Browse Beats", icon: "🎛️", href: "/dashboard/beats", color: "#f59e0b" },
   { label: "View Analytics", icon: "📊", href: "/dashboard/analytics", color: "#3b82f6" },
+  { label: "Ad Campaigns", icon: "📢", href: "/artist/campaigns", color: "#ec4899" },
 ];
 
 function statusBadge(status: string) {
