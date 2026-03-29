@@ -31,13 +31,33 @@ function ArtistCard({ artist, colorIndex }: { artist: Artist; colorIndex: number
           <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${color}30`, color }}>{artist.genre}</span>
         </div>
         <div className="absolute top-3 right-3 bg-[#0a0a0f]/80 backdrop-blur-sm text-[#f9fafb] text-xs font-bold px-2 py-1 rounded-lg border border-[#2a2a3a]">⚡ {artist.echoScore}</div>
+        {artist.recentBuyers && artist.recentBuyers > 0 ? (
+          <div className="absolute top-3 left-3 bg-[#ef4444]/90 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded-lg animate-pulse">
+            🔥 {artist.recentBuyers} bought today
+          </div>
+        ) : null}
       </div>
       <div className="p-5 flex flex-col flex-1">
         <h3 className="font-bold text-[#f9fafb] text-lg mb-1">{artist.name}</h3>
-        <div className="text-sm text-[#9ca3af] mb-4">
+        <div className="text-sm text-[#9ca3af] mb-1">
           {formatNumber(artist.monthlyListeners)} monthly listeners
           <span className="ml-2 text-[#10b981] font-medium">+{artist.growthPct}%</span>
         </div>
+        {artist.holderCount && artist.holderCount > 0 ? (
+          <div className="flex items-center gap-1.5 mb-3">
+            <div className="flex -space-x-1">
+              {Array.from({ length: Math.min(artist.holderCount, 5) }).map((_, i) => (
+                <div key={i} className="w-5 h-5 rounded-full bg-gradient-to-br from-[#8b5cf6] to-[#10b981] border border-[#0a0a0f] flex items-center justify-center text-[8px] font-bold text-white">
+                  {String.fromCharCode(65 + i)}
+                </div>
+              ))}
+            </div>
+            <span className="text-xs text-[#9ca3af]">
+              <span className="text-[#f9fafb] font-semibold">{artist.holderCount}</span> fans holding
+              {artist.holderCount >= 8 && <span className="ml-1 text-[#ef4444] font-bold">· Almost sold out</span>}
+            </span>
+          </div>
+        ) : <div className="mb-3" />}
         <div className="mb-4">
           <div className="flex justify-between text-xs mb-1.5">
             <span className="text-[#9ca3af]">Points Available</span>

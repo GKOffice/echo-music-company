@@ -13,6 +13,8 @@ export interface Artist {
   pointsTotal: number;
   pricePerPoint: number;
   growthPct: number;
+  holderCount?: number;
+  recentBuyers?: number;
 }
 
 export interface Release {
@@ -104,6 +106,8 @@ const MOCK_ARTISTS: Artist[] = [
     pointsTotal: 15,
     pricePerPoint: 250,
     growthPct: 34,
+    holderCount: 12,
+    recentBuyers: 3,
   },
   {
     id: "2",
@@ -117,6 +121,8 @@ const MOCK_ARTISTS: Artist[] = [
     pointsTotal: 20,
     pricePerPoint: 150,
     growthPct: 22,
+    holderCount: 7,
+    recentBuyers: 2,
   },
   {
     id: "3",
@@ -130,6 +136,8 @@ const MOCK_ARTISTS: Artist[] = [
     pointsTotal: 25,
     pricePerPoint: 100,
     growthPct: 18,
+    holderCount: 5,
+    recentBuyers: 1,
   },
   {
     id: "4",
@@ -143,6 +151,8 @@ const MOCK_ARTISTS: Artist[] = [
     pointsTotal: 30,
     pricePerPoint: 75,
     growthPct: 11,
+    holderCount: 4,
+    recentBuyers: 0,
   },
   {
     id: "5",
@@ -156,6 +166,8 @@ const MOCK_ARTISTS: Artist[] = [
     pointsTotal: 18,
     pricePerPoint: 200,
     growthPct: 28,
+    holderCount: 9,
+    recentBuyers: 4,
   },
   {
     id: "6",
@@ -169,6 +181,8 @@ const MOCK_ARTISTS: Artist[] = [
     pointsTotal: 35,
     pricePerPoint: 50,
     growthPct: 9,
+    holderCount: 2,
+    recentBuyers: 0,
   },
 ];
 

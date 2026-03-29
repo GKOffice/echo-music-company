@@ -37,6 +37,8 @@ interface Artist {
   pointsAvailable: number;
   pointsTotal: number;
   pricePerPoint: number;
+  holderCount?: number;
+  recentBuyers?: number;
   melodioScore: number;
   scoreBreakdown: ScoreBreakdown;
   social: {
@@ -61,6 +63,8 @@ const MOCK_ARTIST: Artist = {
   pointsAvailable: 3,
   pointsTotal: 15,
   pricePerPoint: 250,
+  holderCount: 12,
+  recentBuyers: 3,
   melodioScore: 94,
   scoreBreakdown: {
     streaming: 24,
@@ -539,12 +543,35 @@ export default function ArtistProfilePage() {
 
             {/* Available Points */}
             <section className="bg-[#13131a] rounded-xl border border-[#2a2a38] p-6">
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-bold text-[#f9fafb]">Available Points</h2>
                 <span className="text-xs text-[#9ca3af] bg-[#1a1a24] px-3 py-1 rounded-full">
                   {artist?.pointsAvailable ?? 0} remaining
                 </span>
               </div>
+              {/* FOMO — holder count */}
+              {(artist?.holderCount ?? 0) > 0 && (
+                <div className="flex items-center gap-3 mb-5 p-3 bg-[#0a0a0f] rounded-xl border border-[#2a2a38]">
+                  <div className="flex -space-x-1.5">
+                    {Array.from({ length: Math.min(artist?.holderCount ?? 0, 5) }).map((_, i) => (
+                      <div key={i} className="w-6 h-6 rounded-full bg-gradient-to-br from-[#8b5cf6] to-[#10b981] border-2 border-[#0a0a0f] flex items-center justify-center text-[9px] font-bold text-white">
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex-1 text-sm text-[#9ca3af]">
+                    <span className="text-[#f9fafb] font-bold">{artist?.holderCount}</span> fans already holding
+                    {(artist?.holderCount ?? 0) >= 8 && (
+                      <span className="ml-2 text-[#ef4444] text-xs font-bold animate-pulse">· Almost sold out</span>
+                    )}
+                  </div>
+                  {(artist?.recentBuyers ?? 0) > 0 && (
+                    <span className="text-xs bg-[#ef4444]/20 text-[#ef4444] border border-[#ef4444]/30 px-2 py-1 rounded-full font-bold">
+                      🔥 {artist?.recentBuyers} bought today
+                    </span>
+                  )}
+                </div>
+              )}
 
               {isLoading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
