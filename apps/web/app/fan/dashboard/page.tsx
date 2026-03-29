@@ -655,6 +655,63 @@ export default function FanDashboardPage() {
             </table>
           </div>
         </section>
+
+        {/* Fan Economy Features */}
+        <section className="mt-8 bg-[#13131a] rounded-xl border border-[#2a2a38] p-6">
+          <h2 className="text-lg font-bold text-[#f9fafb] mb-2">Fan Economy</h2>
+          <p className="text-sm text-[#9ca3af] mb-6">New ways to support artists and earn together.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              {
+                icon: "🏦",
+                title: "Studio Fund",
+                desc: "Back artists before release. No charge until Release Day.",
+                color: "#8b5cf6",
+                href: "/studio-fund",
+                cta: "Browse Campaigns",
+              },
+              {
+                icon: "📋",
+                title: "First In Registry",
+                desc: "Signal royalty intent early. Artists see real demand.",
+                color: "#10b981",
+                href: "/fan/first-in",
+                cta: "Register Intent",
+              },
+              {
+                icon: "🤝",
+                title: "Deferred Collaboration",
+                desc: "Work now, get paid first on Release Day.",
+                color: "#f59e0b",
+                href: "/collaboration",
+                cta: "Explore Collabs",
+              },
+              {
+                icon: "⚡",
+                title: "Release Day Settlement",
+                desc: "All vehicles execute simultaneously. One atomic event.",
+                color: "#ec4899",
+                href: "/releases",
+                cta: "See Releases",
+              },
+            ].map((item) => (
+              <a
+                key={item.title}
+                href={item.href}
+                className="bg-[#0a0a0f] border border-[#2a2a38] hover:border-[#8b5cf6]/50 rounded-xl p-5 flex flex-col gap-3 transition-colors group"
+              >
+                <div className="text-3xl">{item.icon}</div>
+                <div>
+                  <div className="font-bold text-[#f9fafb] text-sm mb-1">{item.title}</div>
+                  <div className="text-xs text-[#9ca3af]">{item.desc}</div>
+                </div>
+                <div className="mt-auto text-xs font-semibold" style={{ color: item.color }}>
+                  {item.cta} →
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );

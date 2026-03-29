@@ -34,10 +34,10 @@ const howItWorks = [
     icon: "🎧",
     color: "#10b981",
     steps: [
-      "Browse artist point drops in the marketplace",
-      "Buy points = fractional royalty ownership",
-      "Earn every time your artist streams",
-      "Trade points after 12-month hold period",
+      "Back artists via Studio Fund — no charge until Release Day",
+      "Register intent in First In — see real demand data",
+      "Deferred collaborators get paid first on Release Day",
+      "Everything settles atomically — one synchronized Release Day event",
     ],
     cta: "Browse Points",
     href: "/points",
@@ -81,6 +81,10 @@ const TICKER_EVENTS = [
   "🌟 Zara Sol added to 3 editorial playlists",
   "⚡ Melodio Score updated for 12 artists",
   "🎛️ Beat Hub: 47 new beats scored this week",
+  "🏦 Studio Fund: Lyra Bloom raised $12,400 from 48 fans · Release Day pending",
+  "📋 First In Registry: 234 fans pre-signaled 'Dark Matter EP' royalty intent",
+  "🤝 Deferred Collab: 3 producers locked in — paid first on Release Day",
+  "⚡ Release Day Settlement: Nova Vex — all vehicles executed simultaneously",
 ];
 
 const TESTIMONIALS = [
@@ -297,7 +301,7 @@ export default function PlatformPage() {
         <div className="relative z-10 max-w-5xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-[#13131a] border border-[#2a2a3a] rounded-full px-4 py-2 text-sm text-[#9ca3af] mb-8">
             <span className="w-2 h-2 bg-[#10b981] rounded-full animate-pulse" />
-            21 AI agents online — Phase 3 Release Engine active
+            21 AI agents online — Fan Economy Model live
           </div>
 
           <h1 className="text-6xl md:text-8xl font-black tracking-tight mb-6 leading-none">

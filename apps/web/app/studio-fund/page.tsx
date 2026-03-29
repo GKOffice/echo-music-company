@@ -39,7 +39,7 @@ export default function StudioFundPage() {
             <h1 className="text-3xl font-bold text-white">Melodio Studio Fund</h1>
           </div>
           <p className="text-[#9ca3af] text-lg max-w-2xl">
-            Support artists making their best music yet. Pledge now — no charge until Release Day.
+            Support artists making their best music yet. Pledge now — no charge until Release Day. Part of the Melodio Fan Economy Model.
             <span className="text-[#8b5cf6] font-semibold"> $500+ supporters get First In access</span> to royalty purchases.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
@@ -52,6 +52,15 @@ export default function StudioFundPage() {
             <div className="bg-[#13131a] border border-[#2a2a3a] rounded-lg px-4 py-2 text-sm text-[#9ca3af]">
               <span className="text-[#8b5cf6] font-bold">★</span> $500+ gets First In royalty access
             </div>
+          </div>
+
+          {/* Fan Economy Nav */}
+          <div className="mt-6 flex flex-wrap gap-3">
+            <span className="text-xs text-[#6b7280] font-medium self-center">Fan Economy:</span>
+            <a href="/studio-fund" className="bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[#a78bfa] text-xs px-3 py-1.5 rounded-full font-semibold">🏦 Studio Fund</a>
+            <a href="/fan/first-in" className="bg-[#13131a] border border-[#2a2a38] text-[#9ca3af] hover:text-[#f9fafb] text-xs px-3 py-1.5 rounded-full transition-colors">📋 First In Registry</a>
+            <a href="/collaboration" className="bg-[#13131a] border border-[#2a2a38] text-[#9ca3af] hover:text-[#f9fafb] text-xs px-3 py-1.5 rounded-full transition-colors">🤝 Deferred Collab</a>
+            <a href="/releases" className="bg-[#13131a] border border-[#2a2a38] text-[#9ca3af] hover:text-[#f9fafb] text-xs px-3 py-1.5 rounded-full transition-colors">⚡ Release Day</a>
           </div>
         </div>
 
