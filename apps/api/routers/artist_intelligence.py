@@ -90,7 +90,30 @@ async def fetch_spotify(name: str) -> dict:
             if not items:
                 return {"source": "spotify", "available": False, "reason": "Not found"}
 
-            a = items[0]
+            # Pick the best name match — don't blindly take first result
+            name_lower = name.lower()
+            name_parts = set(name_lower.split())
+            best = None
+            for candidate in items[:5]:
+                cname = (candidate.get("name") or "").lower()
+                # Exact match wins immediately
+                if cname == name_lower:
+                    best = candidate
+                    break
+                # Partial match: all parts of the searched name appear in the candidate name
+                if all(p in cname for p in name_parts):
+                    best = candidate
+                    break
+            # Fall back to first result only if its name contains at least one search word
+            if not best:
+                first = items[0]
+                fname = (first.get("name") or "").lower()
+                if any(p in fname for p in name_parts if len(p) > 2):
+                    best = first
+            if not best:
+                return {"source": "spotify", "available": False, "reason": "No matching artist found"}
+
+            a = best
             aid = a["id"]
 
             # Fetch artist detail, top tracks, and related artists in parallel
@@ -243,7 +266,27 @@ async def fetch_musicbrainz(name: str) -> dict:
             if not artists:
                 return {"source": "musicbrainz", "available": False, "reason": "Not found"}
 
-            a = artists[0]
+            # Pick best name match
+            name_lower = name.lower()
+            name_parts = set(name_lower.split())
+            best_mb = None
+            for candidate in artists[:5]:
+                cname = (candidate.get("name") or "").lower()
+                if cname == name_lower:
+                    best_mb = candidate
+                    break
+                if all(p in cname for p in name_parts if len(p) > 2):
+                    best_mb = candidate
+                    break
+            if not best_mb:
+                first = artists[0]
+                fname = (first.get("name") or "").lower()
+                if any(p in fname for p in name_parts if len(p) > 2):
+                    best_mb = first
+            if not best_mb:
+                return {"source": "musicbrainz", "available": False, "reason": "No matching artist found"}
+
+            a = best_mb
             aid = a["id"]
 
             rr = await client.get(
