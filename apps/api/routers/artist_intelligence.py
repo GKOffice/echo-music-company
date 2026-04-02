@@ -279,25 +279,50 @@ async def fetch_musicbrainz(name: str) -> dict:
 
 
 async def fetch_wikipedia(name: str) -> dict:
+    """Fetch Wikipedia summary — rejects disambiguation pages and unrelated articles."""
     try:
         async with httpx.AsyncClient(
             timeout=10, headers={"User-Agent": "Melodio/1.0 (melodio.io)"}
         ) as client:
-            r = await client.get(
-                f"https://en.wikipedia.org/api/rest_v1/page/summary/{name.replace(' ', '_')}",
-                follow_redirects=True,
-            )
-            if r.status_code == 200:
+            # Try full name first, then append "musician" if no result
+            for query in [name, f"{name} musician", f"{name} singer"]:
+                r = await client.get(
+                    f"https://en.wikipedia.org/api/rest_v1/page/summary/{query.replace(' ', '_')}",
+                    follow_redirects=True,
+                )
+                if r.status_code != 200:
+                    continue
                 d = r.json()
+                page_type = d.get("type", "")
+                extract = d.get("extract", "")
+
+                # Reject disambiguation pages outright
+                if page_type == "disambiguation":
+                    continue
+                # Reject pages whose extract looks like a disambiguation list
+                if "may refer to:" in extract.lower() or extract.strip().startswith(name + " may"):
+                    continue
+                # Sanity-check: article title or extract should mention the artist name
+                title = d.get("title", "")
+                name_parts = name.lower().split()
+                if not any(part in title.lower() or part in extract.lower() for part in name_parts if len(part) > 2):
+                    continue
+                # Reject if article is clearly about something other than a musician/artist
+                music_keywords = ["musician", "singer", "artist", "rapper", "band", "songwriter",
+                                  "vocalist", "producer", "album", "single", "music", "record"]
+                if not any(kw in extract.lower() for kw in music_keywords):
+                    continue
+
                 return {
                     "source": "wikipedia",
                     "available": True,
-                    "title": d.get("title", name),
-                    "extract": d.get("extract", "")[:900],
+                    "title": title,
+                    "extract": extract[:900],
                     "thumbnail": d.get("thumbnail", {}).get("source"),
                     "url": d.get("content_urls", {}).get("desktop", {}).get("page"),
                 }
-            return {"source": "wikipedia", "available": False, "reason": f"HTTP {r.status_code}"}
+
+            return {"source": "wikipedia", "available": False, "reason": "No relevant article found"}
     except Exception as e:
         return {"source": "wikipedia", "available": False, "reason": str(e)}
 
@@ -591,6 +616,15 @@ Artist: {artist_name}
 Collected Data:
 {data_json}
 
+CRITICAL RULES — read before generating:
+1. ONLY use information from the Collected Data above. Do NOT invent, hallucinate, or infer facts not present in the data.
+2. If a data source is marked "available: false", treat it as having NO information — do not guess.
+3. If data is sparse, say so in the executive_summary. Use phrases like "Limited data available" or "Insufficient platform data to assess X."
+4. The executive_summary must describe THIS specific artist based on the actual data — not a generic artist profile.
+5. genre_classification must come from actual genre tags in the data (Spotify genres, Last.fm tags, iTunes genre, MusicBrainz tags). If none available, use "Unknown / Insufficient data."
+6. Do NOT fabricate nationalities, biographical details, or platform stats not present in the data.
+7. NEVER use the words invest, investment, or ROI anywhere in the output.
+
 Return this exact JSON structure (fill in all values):
 {{
   "melodio_score": {{
@@ -602,33 +636,33 @@ Return this exact JSON structure (fill in all values):
     "market_timing": <0-100 int>
   }},
   "predictive_angles": {{
-    "collaboration_network": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "platform_velocity": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "genre_timing": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "content_to_music_ratio": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "live_performance_trajectory": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "sync_readiness": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "fanbase_quality": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "release_cadence": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "cross_platform_correlation": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}},
-    "breakout_probability": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words>"}}
+    "collaboration_network": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "platform_velocity": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "genre_timing": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "content_to_music_ratio": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "live_performance_trajectory": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "sync_readiness": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "fanbase_quality": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "release_cadence": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "cross_platform_correlation": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}},
+    "breakout_probability": {{"score": <0-100>, "trend": "<up|down|neutral>", "explanation": "<max 60 words — based only on actual data>"}}
   }},
-  "executive_summary": "<3-4 paragraphs, analytical tone>",
+  "executive_summary": "<3-4 paragraphs about THIS artist based solely on the collected data — no fabrication>",
   "sign_recommendation": {{
     "decision": "<yes|maybe|no>",
     "confidence": <0-100>,
-    "reasoning": "<2-3 sentences — do NOT use the words invest, investment, or ROI>"
+    "reasoning": "<2-3 sentences based only on actual data — no fabrication, no investment language>"
   }},
-  "key_strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
-  "key_risks": ["<risk 1>", "<risk 2>"],
-  "notable_collaborators": ["<name>"],
-  "genre_classification": "<primary genre + subgenre>"
+  "key_strengths": ["<strength derived from actual data>"],
+  "key_risks": ["<risk derived from actual data>"],
+  "notable_collaborators": ["<name — only if present in actual data, otherwise empty array>"],
+  "genre_classification": "<from actual data tags only — if unknown write 'Insufficient data'>"
 }}
 
 Scoring rules:
 - total = music_quality*0.35 + social_momentum*0.20 + commercial_traction*0.25 + brand_strength*0.10 + market_timing*0.10
-- Be data-driven and realistic; score conservatively when data is sparse
-- NEVER use the words invest, investment, or ROI anywhere in the output"""
+- Score conservatively when data is sparse — low confidence = lower scores
+- Score 0 on dimensions where no data exists rather than guessing"""
 
 
 async def _call_claude(prompt: str, max_tokens: int = 2000) -> Optional[str]:
@@ -703,18 +737,19 @@ def _mock_analysis(artist_name: str) -> dict:
             "breakout_probability": angle(25, 75),
         },
         "executive_summary": (
-            f"{artist_name} shows promising characteristics across multiple evaluation dimensions. "
-            f"With a Melodio Score of {total}, this artist demonstrates a foundation worth monitoring.\n\n"
-            "Analysis is based on limited data — connect Spotify, YouTube, and other API keys for a comprehensive picture.\n\n"
-            "Platform velocity and release cadence are key metrics to watch over the next 90 days."
+            f"Insufficient platform data is available to generate a complete analysis for {artist_name}. "
+            f"The Melodio Score of {total} is an estimate based on limited signals.\n\n"
+            "To generate an accurate report, connect Spotify, YouTube, Last.fm, and other API keys. "
+            "Without live data, scores reflect conservative baseline estimates only.\n\n"
+            "This report should not be used for A&R decisions until full platform data is available."
         ),
         "sign_recommendation": {
             "decision": dec,
             "confidence": conf,
-            "reasoning": "Based on available data signals, this artist merits further consideration. Deeper data access would sharpen this assessment.",
+            "reasoning": "Insufficient data to make a reliable recommendation. Connect platform API keys for a real assessment.",
         },
-        "key_strengths": ["Release consistency", "Genre positioning", "Dedicated core fanbase"],
-        "key_risks": ["Limited cross-platform data available", "Market saturation in genre"],
+        "key_strengths": ["Insufficient data — connect API keys for real analysis"],
+        "key_risks": ["Limited platform data available", "Cannot assess without live Spotify/streaming data"],
         "notable_collaborators": [],
         "genre_classification": "Independent",
     }
