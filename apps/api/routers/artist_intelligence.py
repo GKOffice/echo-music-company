@@ -113,6 +113,10 @@ async def fetch_spotify(name: str) -> dict:
             if not best:
                 return {"source": "spotify", "available": False, "reason": "No matching artist found"}
 
+            # Reject zero-quality matches — likely wrong artist
+            if best.get("popularity", 0) == 0 and best.get("followers", {}).get("total", 0) == 0:
+                return {"source": "spotify", "available": False, "reason": "Match found but appears to be wrong artist (0 followers, 0 popularity)"}
+
             a = best
             aid = a["id"]
 
@@ -186,7 +190,23 @@ async def fetch_youtube(name: str) -> dict:
             if not items:
                 return {"source": "youtube", "available": False, "reason": "Not found"}
 
-            channel_id = items[0]["id"]["channelId"]
+            # Pick best name match
+            name_lower = name.lower()
+            name_parts = set(name_lower.split())
+            best_yt = None
+            for item in items[:5]:
+                title = (item.get("snippet", {}).get("title") or "").lower()
+                if title == name_lower or all(p in title for p in name_parts if len(p) > 2):
+                    best_yt = item
+                    break
+            if not best_yt:
+                first_title = (items[0].get("snippet", {}).get("title") or "").lower()
+                if any(p in first_title for p in name_parts if len(p) > 2):
+                    best_yt = items[0]
+            if not best_yt:
+                return {"source": "youtube", "available": False, "reason": "No matching channel found"}
+
+            channel_id = best_yt["id"]["channelId"]
             cr = await client.get(
                 "https://www.googleapis.com/youtube/v3/channels",
                 params={"part": "statistics,snippet", "id": channel_id, "key": YOUTUBE_API_KEY},
