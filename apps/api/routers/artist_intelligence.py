@@ -90,34 +90,7 @@ async def fetch_spotify(name: str) -> dict:
             if not items:
                 return {"source": "spotify", "available": False, "reason": "Not found"}
 
-            # Pick the best name match — don't blindly take first result
-            name_lower = name.lower()
-            name_parts = set(name_lower.split())
-            best = None
-            for candidate in items[:5]:
-                cname = (candidate.get("name") or "").lower()
-                # Exact match wins immediately
-                if cname == name_lower:
-                    best = candidate
-                    break
-                # Partial match: all parts of the searched name appear in the candidate name
-                if all(p in cname for p in name_parts):
-                    best = candidate
-                    break
-            # Fall back to first result only if its name contains at least one search word
-            if not best:
-                first = items[0]
-                fname = (first.get("name") or "").lower()
-                if any(p in fname for p in name_parts if len(p) > 2):
-                    best = first
-            if not best:
-                return {"source": "spotify", "available": False, "reason": "No matching artist found"}
-
-            # Reject zero-quality matches — likely wrong artist
-            if best.get("popularity", 0) == 0 and best.get("followers", {}).get("total", 0) == 0:
-                return {"source": "spotify", "available": False, "reason": "Match found but appears to be wrong artist (0 followers, 0 popularity)"}
-
-            a = best
+            a = items[0]
             aid = a["id"]
 
             # Fetch artist detail, top tracks, and related artists in parallel
@@ -190,23 +163,7 @@ async def fetch_youtube(name: str) -> dict:
             if not items:
                 return {"source": "youtube", "available": False, "reason": "Not found"}
 
-            # Pick best name match
-            name_lower = name.lower()
-            name_parts = set(name_lower.split())
-            best_yt = None
-            for item in items[:5]:
-                title = (item.get("snippet", {}).get("title") or "").lower()
-                if title == name_lower or all(p in title for p in name_parts if len(p) > 2):
-                    best_yt = item
-                    break
-            if not best_yt:
-                first_title = (items[0].get("snippet", {}).get("title") or "").lower()
-                if any(p in first_title for p in name_parts if len(p) > 2):
-                    best_yt = items[0]
-            if not best_yt:
-                return {"source": "youtube", "available": False, "reason": "No matching channel found"}
-
-            channel_id = best_yt["id"]["channelId"]
+            channel_id = items[0]["id"]["channelId"]
             cr = await client.get(
                 "https://www.googleapis.com/youtube/v3/channels",
                 params={"part": "statistics,snippet", "id": channel_id, "key": YOUTUBE_API_KEY},
@@ -286,27 +243,7 @@ async def fetch_musicbrainz(name: str) -> dict:
             if not artists:
                 return {"source": "musicbrainz", "available": False, "reason": "Not found"}
 
-            # Pick best name match
-            name_lower = name.lower()
-            name_parts = set(name_lower.split())
-            best_mb = None
-            for candidate in artists[:5]:
-                cname = (candidate.get("name") or "").lower()
-                if cname == name_lower:
-                    best_mb = candidate
-                    break
-                if all(p in cname for p in name_parts if len(p) > 2):
-                    best_mb = candidate
-                    break
-            if not best_mb:
-                first = artists[0]
-                fname = (first.get("name") or "").lower()
-                if any(p in fname for p in name_parts if len(p) > 2):
-                    best_mb = first
-            if not best_mb:
-                return {"source": "musicbrainz", "available": False, "reason": "No matching artist found"}
-
-            a = best_mb
+            a = artists[0]
             aid = a["id"]
 
             rr = await client.get(
