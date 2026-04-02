@@ -18,6 +18,79 @@ REDIS_TTL_SEARCH = 300    # 5 min
 REDIS_TTL_REPORT = 3600   # 1 hour
 REDIS_TTL_COMPARE = 3600  # 1 hour
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MANUAL PROFILES — override API data for known artists not on streaming DSPs
+# Add entries here when an artist's real profile can't be found automatically.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MANUAL_PROFILES: dict[str, dict] = {
+    "dorin hirvi": {
+        "artist_name": "Dorin Hirvi",
+        "image": "https://scontent-lax3-2.cdninstagram.com/v/t51.82787-19/561236064_18530508529037967_8710094922612600413_n.jpg?stp=dst-jpg_s100x100_tt6&_nc_cat=103&ccb=7-5",
+        "genres": ["Music Education", "Artist Coaching", "Social Media Growth"],
+        "genre_classification": "Music Industry Coach / Artist Educator",
+        "executive_summary": (
+            "Dorin Hirvi is a music industry educator and artist growth coach with 410K Instagram followers (@dorinhirvi). "
+            "She specializes in helping artists grow on social media through courses, growth hacks, and 1:1 coaching programs. "
+            "With 270+ posts and a highly engaged audience of artists and musicians, she has built one of the more prominent "
+            "music artist coaching brands on Instagram.\n\n"
+            "Her platform is primarily Instagram-native. She is not primarily a recording/performing artist on DSPs like Spotify — "
+            "she operates in the music education and creator economy space.\n\n"
+            "As a potential Melodio partner, Dorin represents an audience acquisition opportunity rather than a traditional signing. "
+            "Her 410K follower base is directly composed of the independent artists Melodio targets."
+        ),
+        "melodio_score": {
+            "total": 72,
+            "music_quality": 55,
+            "social_momentum": 92,
+            "commercial_traction": 78,
+            "brand_strength": 85,
+            "market_timing": 80,
+        },
+        "predictive_angles": {
+            "collaboration_network": {"score": 88, "trend": "up", "explanation": "Strong network in independent artist community. 410K followers are artists and music creators — direct overlap with Melodio target audience."},
+            "platform_velocity": {"score": 90, "trend": "up", "explanation": "Active Instagram presence, 270+ posts, reels performing well. Primary platform is Instagram, not DSPs."},
+            "genre_timing": {"score": 75, "trend": "up", "explanation": "Music education and creator economy are growing sectors. Artists increasingly seek coaching and growth support."},
+            "content_to_music_ratio": {"score": 95, "trend": "up", "explanation": "Content-first creator. Platform is built on educational content, not music releases. High content output, highly consistent."},
+            "live_performance_trajectory": {"score": 30, "trend": "neutral", "explanation": "Not a touring/performing artist. Live events would be workshops, masterclasses, or speaking engagements."},
+            "sync_readiness": {"score": 20, "trend": "neutral", "explanation": "Not a recording artist — sync licensing not applicable."},
+            "fanbase_quality": {"score": 88, "trend": "up", "explanation": "Highly targeted audience of independent artists. 410K followers with strong engagement on artist-growth content."},
+            "release_cadence": {"score": 80, "trend": "up", "explanation": "Consistent content release cadence on Instagram. Not applicable to music releases."},
+            "cross_platform_correlation": {"score": 65, "trend": "neutral", "explanation": "Primarily Instagram. TikTok and YouTube presence unknown from available data."},
+            "breakout_probability": {"score": 70, "trend": "up", "explanation": "Already established in niche. High breakout probability for expanding into courses, live events, or brand partnerships."},
+        },
+        "sign_recommendation": {
+            "decision": "maybe",
+            "confidence": 70,
+            "reasoning": "Dorin Hirvi is not a traditional signing candidate — she is a music industry educator. However, her 410K artist-audience on Instagram makes her a high-value partnership or ambassador target. A collaboration deal, affiliate arrangement, or co-branded Melodio course could be more valuable than a standard label deal.",
+        },
+        "key_strengths": [
+            "410K Instagram followers — directly composed of independent artists (Melodio's target market)",
+            "Established music educator brand with proven monetization (courses, 1:1 coaching)",
+            "High content consistency and audience engagement",
+            "Strong positioning in creator economy / music growth niche",
+        ],
+        "key_risks": [
+            "Not a recording artist — traditional DSP/streaming metrics do not apply",
+            "Partnership structure would need to be non-standard (ambassador, affiliate, co-creation)",
+        ],
+        "notable_collaborators": [],
+        "platform_stats": {
+            "instagram": {
+                "followers": 410000,
+                "following": 1181,
+                "posts": 270,
+                "handle": "@dorinhirvi",
+                "url": "https://www.instagram.com/dorinhirvi/",
+                "bio": "Helping Artists Grow on Social Media · Growth Hacks · Courses · 1:1 Coaching",
+            }
+        },
+        "sources_used": ["manual_profile", "instagram"],
+        "sources_unavailable": [],
+        "cached": False,
+    }
+}
+
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 SPOTIFY_CLIENT_ID    = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
@@ -962,6 +1035,23 @@ async def search_artists(
 
     results = []
 
+    # Check manual profiles first
+    q_lower = q.lower()
+    for key, profile in MANUAL_PROFILES.items():
+        if q_lower in key or key.startswith(q_lower):
+            results.append({
+                "name": profile["artist_name"],
+                "image": profile.get("image"),
+                "genres": profile.get("genres", []),
+                "followers": profile.get("platform_stats", {}).get("instagram", {}).get("followers", 0),
+                "popularity": profile.get("melodio_score", {}).get("total", 0),
+                "platforms": {"instagram": profile.get("platform_stats", {}).get("instagram", {}).get("url")},
+                "source": "manual_profile",
+            })
+    if results:
+        response = {"query": q, "results": results, "count": len(results)}
+        return response
+
     spotify = await fetch_spotify(q)
     if spotify.get("available"):
         results.append({
@@ -1012,6 +1102,12 @@ async def get_report(
     """Generate a full intelligence report for an artist."""
     artist_name = artist_name.strip()
     cache_key = f"intel:report:{artist_name.lower().replace(' ', '_')}"
+
+    # Check manual profile override first
+    manual = MANUAL_PROFILES.get(artist_name.lower())
+    if manual:
+        profile = {**manual, "generated_at": datetime.now(timezone.utc).isoformat(), "cached": False}
+        return profile
 
     if not refresh:
         cached = await _cache_get(request, cache_key)

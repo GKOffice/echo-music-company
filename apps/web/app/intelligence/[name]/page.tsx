@@ -309,6 +309,13 @@ export default function IntelligenceReportPage() {
                 { label: "First Release", value: stats.musicbrainz.first_release || "—" },
               ]} />
             )}
+            {stats.instagram && (
+              <StatCard icon="📸" platform="Instagram" stats={[
+                { label: "Followers", value: fmt(stats.instagram.followers) },
+                { label: "Posts", value: fmt(stats.instagram.posts) },
+                { label: "Handle", value: stats.instagram.handle || "—" },
+              ]} />
+            )}
           </div>
         </section>
 
