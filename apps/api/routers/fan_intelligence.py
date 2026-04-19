@@ -174,7 +174,7 @@ async def get_recommendations(
                 SELECT DISTINCT ep.artist_id, a.genre, ep.amount_paid, ep.price_per_point
                 FROM echo_points ep
                 JOIN artists a ON a.id = ep.artist_id
-                WHERE ep.user_id = :uid AND ep.status = 'active'
+                WHERE ep.buyer_user_id = :uid AND ep.status = 'active'
             """),
             {"uid": user_id},
         )
@@ -332,7 +332,7 @@ async def get_fan_profile(
                 SELECT DISTINCT ep.artist_id, a.genre, ep.amount_paid, ep.price_per_point
                 FROM echo_points ep
                 JOIN artists a ON a.id = ep.artist_id
-                WHERE ep.user_id = :uid AND ep.status = 'active'
+                WHERE ep.buyer_user_id = :uid AND ep.status = 'active'
             """),
             {"uid": user_id},
         )
@@ -379,7 +379,7 @@ async def get_early_access_alerts(
             text("""
                 SELECT DISTINCT a.genre FROM echo_points ep
                 JOIN artists a ON a.id = ep.artist_id
-                WHERE ep.user_id = :uid AND ep.status = 'active'
+                WHERE ep.buyer_user_id = :uid AND ep.status = 'active'
             """),
             {"uid": user_id},
         )

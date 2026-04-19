@@ -24,12 +24,13 @@ services:
     image: redis:7-alpine
     container_name: echo_redis
     restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-melodio_redis_2026} --appendonly yes --appendfsync everysec
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-melodio_redis_2026}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,7 +45,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://echo:echo_dev@postgres:5432/echo
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-melodio_redis_2026}@redis:6379
       ENVIRONMENT: development
     env_file:
       - .env
@@ -80,7 +81,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://echo:echo_dev@postgres:5432/echo
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-melodio_redis_2026}@redis:6379
       ENVIRONMENT: development
     env_file:
       - .env

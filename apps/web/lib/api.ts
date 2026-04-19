@@ -497,42 +497,45 @@ export async function fetchSongwriters(): Promise<Songwriter[]> {
   }
 }
 
-export async function fetchMyArtist(): Promise<DashboardArtist> {
+export async function fetchMyArtist(): Promise<DashboardArtist | null> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return null;
     const res = await fetch(`${API_URL}/api/v1/artists/me`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return null;
     return res.json();
   } catch {
-    return MOCK_DASHBOARD_ARTIST;
+    return null;
   }
 }
 
 export async function fetchMyReleases(): Promise<Release[]> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return [];
     const res = await fetch(`${API_URL}/api/v1/releases?mine=true`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return [];
     return res.json();
   } catch {
-    return MOCK_RELEASES;
+    return [];
   }
 }
 
 export async function fetchMyActivity(): Promise<ActivityItem[]> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return [];
     const res = await fetch(`${API_URL}/api/v1/artists/me/activity`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return [];
     return res.json();
   } catch {
-    return MOCK_ACTIVITY;
+    return [];
   }
 }
 
@@ -841,16 +844,17 @@ const MOCK_NOTIFICATIONS: AppNotification[] = [
   { id: "n8", type: "royalty_payout", title: "Royalty Payout Received", description: "You received $45.00 from Melo Cipher royalties.", time: "2026-02-20T07:45:00Z", read: true },
 ];
 
-export async function fetchFanPortfolio(): Promise<FanPortfolio> {
+export async function fetchFanPortfolio(): Promise<FanPortfolio | null> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return null;
     const res = await fetch(`${API_URL}/api/v1/fan/portfolio`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return null;
     return res.json();
   } catch {
-    return MOCK_FAN_PORTFOLIO;
+    return null;
   }
 }
 
@@ -864,16 +868,17 @@ export async function fetchArtistBySlug(slug: string): Promise<ArtistProfile | n
   }
 }
 
-export async function fetchAmbassador(): Promise<AmbassadorData> {
+export async function fetchAmbassador(): Promise<AmbassadorData | null> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return null;
     const res = await fetch(`${API_URL}/api/v1/ambassador/me`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return null;
     return res.json();
   } catch {
-    return MOCK_AMBASSADOR;
+    return null;
   }
 }
 
@@ -890,26 +895,28 @@ export async function fetchTransparency(): Promise<TransparencyData> {
 export async function fetchTransactions(): Promise<Transaction[]> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return [];
     const res = await fetch(`${API_URL}/api/v1/transactions`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return [];
     return res.json();
   } catch {
-    return MOCK_TRANSACTIONS;
+    return [];
   }
 }
 
 export async function fetchNotifications(): Promise<AppNotification[]> {
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("melodio_token") : null;
+    if (!token) return [];
     const res = await fetch(`${API_URL}/api/v1/notifications`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) return [];
     return res.json();
   } catch {
-    return MOCK_NOTIFICATIONS;
+    return [];
   }
 }
 

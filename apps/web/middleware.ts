@@ -10,6 +10,11 @@ const PROTECTED_PATHS = [
   "/onboarding",
   "/releases",
   "/admin",
+  "/notifications",
+  "/payments",
+  "/dealroom/create",
+  "/songwriters/register",
+  "/songwriters/dashboard",
 ];
 
 export function middleware(request: NextRequest) {

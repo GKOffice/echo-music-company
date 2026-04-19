@@ -595,7 +595,9 @@ class CEOAgent(BaseAgent):
               (SELECT COUNT(*) FROM agent_tasks WHERE status = 'failed') AS tasks_failed
             """
         )
-        return dict(row) if row else {}
+        if not row:
+            return {}
+        return {k: float(v) if hasattr(v, '__float__') and not isinstance(v, (int, bool)) else (int(v) if isinstance(v, int) else v) for k, v in dict(row).items()}
 
     async def _claude_signing_decision(self, artist_data: dict) -> dict:
         prompt = (

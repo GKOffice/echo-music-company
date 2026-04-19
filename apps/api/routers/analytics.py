@@ -280,9 +280,9 @@ async def get_points_analytics(
     exchange = dict(exchange_row) if exchange_row else {"purchased": 0, "redeemed": 0}
 
     demo_result = await db.execute(text("""
-        SELECT u.country, COUNT(DISTINCT ep.user_id) as holders
+        SELECT u.country, COUNT(DISTINCT ep.buyer_user_id) as holders
         FROM echo_points ep
-        JOIN users u ON ep.user_id = u.id
+        JOIN users u ON ep.buyer_user_id = u.id
         WHERE ep.status = 'active'
         GROUP BY u.country ORDER BY holders DESC LIMIT 10
     """))
@@ -314,7 +314,7 @@ async def get_agent_performance(
     """Agent performance metrics — task counts, completion rates, avg duration."""
     result = await db.execute(
         text(f"""
-            SELECT assigned_to as agent_id,
+            SELECT agent_id,
                    COUNT(*) as total_tasks,
                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
                    COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
@@ -322,7 +322,7 @@ async def get_agent_performance(
                    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000)::numeric, 0) as avg_duration_ms
             FROM agent_tasks
             WHERE created_at >= NOW() - INTERVAL '{days} days'
-            GROUP BY assigned_to ORDER BY total_tasks DESC
+            GROUP BY agent_id ORDER BY total_tasks DESC
         """)
     )
     agents = [dict(r) for r in result.mappings().all()]
@@ -379,16 +379,16 @@ async def get_weekly_report(
 
     # Agent error counts for alerts
     error_result = await db.execute(text("""
-        SELECT assigned_to, COUNT(*) as failed
+        SELECT agent_id, COUNT(*) as failed
         FROM agent_tasks
         WHERE status = 'failed' AND created_at >= NOW() - INTERVAL '7 days'
-        GROUP BY assigned_to
+        GROUP BY agent_id
         HAVING COUNT(*) >= 3
     """))
     agent_errors = [dict(r) for r in error_result.mappings().all()]
 
     alerts = [
-        {"type": "agent_errors", "agent": r["assigned_to"], "failed_count": int(r["failed"])}
+        {"type": "agent_errors", "agent": r["agent_id"], "failed_count": int(r["failed"])}
         for r in agent_errors
     ]
 
@@ -493,12 +493,12 @@ async def trigger_anomaly_scan(
 
     # 3. Agent error rate > 20% last 24h
     agent_result = await db.execute(text("""
-        SELECT assigned_to as agent_id,
+        SELECT agent_id,
                COUNT(*) as total,
                COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
         FROM agent_tasks
         WHERE created_at >= NOW() - INTERVAL '24 hours'
-        GROUP BY assigned_to
+        GROUP BY agent_id
         HAVING COUNT(*) >= 5
            AND COUNT(CASE WHEN status = 'failed' THEN 1 END)::float / COUNT(*) > 0.2
     """))

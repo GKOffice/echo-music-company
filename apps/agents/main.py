@@ -80,6 +80,32 @@ async def main():
     # Handle graceful shutdown via event
     shutdown_event = asyncio.Event()
 
+    async def supervisor():
+        """Watches agent health every 30s. Restarts any agent that trips its circuit breaker."""
+        while not shutdown_event.is_set():
+            await asyncio.sleep(30)
+            for i, (agent, AgentClass) in enumerate(zip(list(agents), ALL_AGENTS)):
+                if not agent.is_healthy:
+                    logger.warning(
+                        f"[supervisor] {agent.agent_id} circuit breaker tripped — restarting..."
+                    )
+                    try:
+                        await agent.stop()
+                    except Exception as e:
+                        logger.error(f"[supervisor] Error stopping {agent.agent_id}: {e}")
+                    new_agent = AgentClass()
+                    agents[i] = new_agent
+                    if i < len(tasks):
+                        tasks[i].cancel()
+                    new_task = asyncio.create_task(new_agent.start(), name=new_agent.agent_id)
+                    if i < len(tasks):
+                        tasks[i] = new_task
+                    else:
+                        tasks.append(new_task)
+                    logger.info(f"[supervisor] {new_agent.agent_id} restarted")
+
+    asyncio.create_task(supervisor(), name="supervisor")
+
     def handle_shutdown():
         logger.info("\nShutdown signal received...")
         shutdown_event.set()

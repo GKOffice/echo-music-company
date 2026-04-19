@@ -231,6 +231,24 @@ def _build_fallback_report(name: str, genre: str, goals: list, social_links: dic
     }
 
 
+@router.get("/report")
+async def get_growth_report_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Get current artist growth summary (quick read)."""
+    result = await db.execute(
+        text("SELECT name, genre, streams_total, revenue_total FROM artists WHERE user_id = :uid LIMIT 1"),
+        {"uid": current_user.user_id},
+    )
+    artist = result.mappings().fetchone()
+    return {
+        "status": "ok",
+        "artist": dict(artist) if artist else None,
+        "message": "POST /api/v1/growth/report with artist details to generate a full AI growth report",
+    }
+
+
 @router.post("/report")
 async def generate_growth_report(
     req: GrowthReportRequest,

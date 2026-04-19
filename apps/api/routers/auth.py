@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -8,20 +9,40 @@ from typing import Optional
 import os
 import uuid
 import hashlib
+import bcrypt as _bcrypt
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from database import get_db
 from services.email import welcome_email
 
 router = APIRouter()
 
+# ─── Rate Limiting ───────────────────────────────────────────────────────────
+# Simple in-memory IP-based rate limiter (resets on process restart)
+_rate_limit: dict[str, list[float]] = {}
+
+
+def check_rate_limit(ip: str, key: str, max_calls: int, window_secs: int) -> None:
+    """Raise 429 if IP has exceeded max_calls within window_secs."""
+    now = time.monotonic()
+    bucket_key = f"{ip}:{key}"
+    timestamps = _rate_limit.get(bucket_key, [])
+    # Drop expired timestamps
+    timestamps = [t for t in timestamps if now - t < window_secs]
+    if len(timestamps) >= max_calls:
+        retry_after = int(window_secs - (now - timestamps[0]))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many requests. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    timestamps.append(now)
+    _rate_limit[bucket_key] = timestamps
+
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-in-production")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "43200"))
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
@@ -50,11 +71,18 @@ class TokenData(BaseModel):
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # Use bcrypt directly — avoids passlib/bcrypt version conflicts
+    pw = password.encode("utf-8")[:72]
+    return _bcrypt.hashpw(pw, _bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        pw = plain.encode("utf-8")[:72]
+        hashed_bytes = hashed.encode("utf-8") if isinstance(hashed, str) else hashed
+        return _bcrypt.checkpw(pw, hashed_bytes)
+    except Exception:
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -87,7 +115,8 @@ async def get_current_user(
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register(request: Request, user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+    check_rate_limit(request.client.host, "register", max_calls=5, window_secs=300)
     if not user_in.email and not user_in.phone:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -137,9 +166,11 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/token", response_model=Token)
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
+    check_rate_limit(request.client.host, "login", max_calls=10, window_secs=60)
     from sqlalchemy import text
 
     result = await db.execute(

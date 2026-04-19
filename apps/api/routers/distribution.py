@@ -555,7 +555,7 @@ async def create_presave_link(
 
     await db.execute(
         text("""UPDATE releases
-               SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('presave_url', :url::text),
+               SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('presave_url', CAST(:url AS TEXT)),
                    updated_at = NOW()
                WHERE id = :id"""),
         {"url": presave_url, "id": body.release_id},

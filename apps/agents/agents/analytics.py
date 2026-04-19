@@ -309,14 +309,14 @@ class AnalyticsAgent(BaseAgent):
     async def _task_agent_performance(self, task: AgentTask) -> AgentResult:
         # Task completion stats by agent
         stats = await self.db_fetch(
-            """SELECT assigned_to as agent_id,
+            """SELECT agent_id,
                       COUNT(*) as total_tasks,
                       COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
                       COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
                       AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000) as avg_duration_ms
                FROM agent_tasks
                WHERE created_at >= NOW() - INTERVAL '7 days'
-               GROUP BY assigned_to ORDER BY total_tasks DESC"""
+               GROUP BY agent_id ORDER BY total_tasks DESC"""
         )
 
         return AgentResult(
@@ -387,12 +387,12 @@ class AnalyticsAgent(BaseAgent):
 
         # 3. Agent error rate > 20% in last 24h
         agent_errors = await self.db_fetch(
-            """SELECT assigned_to as agent_id,
+            """SELECT agent_id,
                       COUNT(*) as total,
                       COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
                FROM agent_tasks
                WHERE created_at >= NOW() - INTERVAL '24 hours'
-               GROUP BY assigned_to
+               GROUP BY agent_id
                HAVING COUNT(*) >= 5
                   AND COUNT(CASE WHEN status = 'failed' THEN 1 END)::float / COUNT(*) > 0.2"""
         )

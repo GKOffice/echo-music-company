@@ -905,6 +905,35 @@ class ExternalCatalogRequest(BaseModel):
     rights_type: str = "master"
 
 
+@router.get("/external-catalog")
+async def list_external_catalog(
+    genre: Optional[str] = Query(None),
+    rights_type: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Browse all verified external catalog tracks available for Deal Room."""
+    try:
+        conditions = ["status = 'verified'"]
+        params: dict = {"limit": limit, "offset": offset}
+        if genre:
+            conditions.append("genre ILIKE :genre")
+            params["genre"] = f"%{genre}%"
+        if rights_type:
+            conditions.append("rights_type = :rights_type")
+            params["rights_type"] = rights_type
+        where = " AND ".join(conditions)
+        result = await db.execute(
+            text(f"SELECT * FROM external_catalog WHERE {where} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+            params,
+        )
+        rows = result.mappings().fetchall()
+        return {"items": [_serialize(dict(r)) for r in rows], "total": len(rows)}
+    except Exception:
+        return {"items": [], "total": 0}
+
+
 @router.post("/external-catalog", status_code=201)
 async def submit_external_track(
     req: ExternalCatalogRequest,

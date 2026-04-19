@@ -3,10 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import os
+import logging
+import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from database import engine
+
+logger = logging.getLogger(__name__)
 from routers import auth, artists, releases, points, agents, hub, finance, legal, analytics, distribution, deal_room, songwriters
 from routers.digital_merch import router as digital_merch_router
 from routers.payments import router as payments_router
@@ -24,7 +29,34 @@ from routers.fan_economy import router as fan_economy_router
 
 load_dotenv()
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+# ─── Sentry (no-op if SENTRY_DSN not set) ────────────────────────────────────────────
+_sentry_dsn = os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        traces_sample_rate=0.1,
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://:melodio_redis_2026@localhost:6379")
+
+
+# ─── Quarterly Payout Scheduler ───────────────────────────────────────────────────
+async def trigger_quarterly_payouts():
+    """Fires Jan 15, Apr 15, Jul 15, Oct 15 at 09:00 UTC to process point holder payouts."""
+    logger.info("[scheduler] Quarterly payout triggered — firing /api/v1/points/payouts/process")
+    service_token = os.getenv("SERVICE_TOKEN", "")
+    api_url = os.getenv("INTERNAL_API_URL", "http://localhost:8000")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{api_url}/api/v1/points/payouts/process",
+                headers={"Authorization": f"Bearer {service_token}", "X-Service": "scheduler"},
+            )
+        logger.info(f"[scheduler] Quarterly payout response: {resp.status_code}")
+    except Exception as e:
+        logger.error(f"[scheduler] Quarterly payout failed: {e}")
 
 
 @asynccontextmanager
@@ -34,7 +66,27 @@ async def lifespan(app: FastAPI):
         encoding="utf-8",
         decode_responses=True,
     )
+
+    # Start quarterly payout scheduler (production only)
+    scheduler = AsyncIOScheduler()
+    if os.getenv("ENVIRONMENT") == "production":
+        scheduler.add_job(
+            trigger_quarterly_payouts,
+            trigger="cron",
+            month="1,4,7,10",
+            day=15,
+            hour=9,
+            minute=0,
+            id="quarterly_payouts",
+        )
+        scheduler.start()
+        logger.info("[scheduler] Quarterly payout cron started (Jan/Apr/Jul/Oct 15 @ 09:00 UTC)")
+    app.state.scheduler = scheduler
+
     yield
+
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
     await app.state.redis.aclose()
     await engine.dispose()
 

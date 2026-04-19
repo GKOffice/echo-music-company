@@ -102,7 +102,7 @@ async def list_products(
     params: dict = {"limit": limit, "offset": offset}
 
     if artist_id:
-        conditions.append("dp.artist_id = :artist_id::uuid")
+        conditions.append("dp.artist_id = CAST(:artist_id AS UUID)")
         params["artist_id"] = artist_id
     if product_type:
         conditions.append("dp.product_type = :product_type")
@@ -138,7 +138,7 @@ async def artist_storefront(
             SELECT dp.*, a.name AS artist_name
             FROM digital_products dp
             JOIN artists a ON a.id = dp.artist_id
-            WHERE dp.artist_id = :artist_id::uuid AND dp.is_active = true
+            WHERE dp.artist_id = CAST(:artist_id AS UUID) AND dp.is_active = true
             ORDER BY dp.is_featured DESC, dp.product_type, dp.price
         """),
         {"artist_id": artist_id},
@@ -146,7 +146,7 @@ async def artist_storefront(
     rows = result.mappings().all()
 
     artist_result = await db.execute(
-        text("SELECT id, name, genre, bio FROM artists WHERE id = :id::uuid"),
+        text("SELECT id, name, genre, bio FROM artists WHERE id = CAST(:id AS UUID)"),
         {"id": artist_id},
     )
     artist = artist_result.mappings().first()
@@ -174,7 +174,7 @@ async def my_purchases(
             FROM digital_purchases dp2
             JOIN digital_products p ON p.id = dp2.product_id
             JOIN artists a ON a.id = dp2.artist_id
-            WHERE dp2.buyer_user_id = :user_id::uuid
+            WHERE dp2.buyer_user_id = CAST(:user_id AS UUID)
             ORDER BY dp2.purchased_at DESC
         """),
         {"user_id": current_user.user_id},
@@ -194,7 +194,7 @@ async def secure_download(
             SELECT dp2.*, p.file_url, p.title, p.file_format
             FROM digital_purchases dp2
             JOIN digital_products p ON p.id = dp2.product_id
-            WHERE dp2.download_token = :token::uuid
+            WHERE dp2.download_token = CAST(:token AS UUID)
         """),
         {"token": token},
     )
@@ -218,7 +218,7 @@ async def secure_download(
         text("""
             UPDATE digital_purchases
             SET download_count = download_count + 1, last_downloaded_at = NOW()
-            WHERE download_token = :token::uuid
+            WHERE download_token = CAST(:token AS UUID)
         """),
         {"token": token},
     )
@@ -241,7 +241,7 @@ async def product_stats(
 ):
     """Product sales stats (artist only)."""
     result = await db.execute(
-        text("SELECT * FROM digital_products WHERE id = :id::uuid"),
+        text("SELECT * FROM digital_products WHERE id = CAST(:id AS UUID)"),
         {"id": product_id},
     )
     product = result.mappings().first()
@@ -251,7 +251,7 @@ async def product_stats(
 
     # Verify artist ownership
     artist_result = await db.execute(
-        text("SELECT id FROM artists WHERE id = :aid::uuid AND user_id = :uid::uuid"),
+        text("SELECT id FROM artists WHERE id = CAST(:aid AS UUID) AND user_id = CAST(:uid AS UUID)"),
         {"aid": str(product["artist_id"]), "uid": current_user.user_id},
     )
     if not artist_result.mappings().first():
@@ -266,7 +266,7 @@ async def product_stats(
                 COALESCE(SUM(melodio_fee), 0) AS total_fees,
                 COALESCE(AVG(amount_paid), 0) AS avg_order_value
             FROM digital_purchases
-            WHERE product_id = :pid::uuid AND status = 'completed'
+            WHERE product_id = CAST(:pid AS UUID) AND status = 'completed'
         """),
         {"pid": product_id},
     )
@@ -289,7 +289,7 @@ async def get_product(
             SELECT dp.*, a.name AS artist_name
             FROM digital_products dp
             JOIN artists a ON a.id = dp.artist_id
-            WHERE dp.id = :id::uuid AND dp.is_active = true
+            WHERE dp.id = CAST(:id AS UUID) AND dp.is_active = true
         """),
         {"id": product_id},
     )
@@ -308,7 +308,7 @@ async def create_product(
     """Create digital product (artist auth)."""
     # Find artist belonging to current user
     artist_result = await db.execute(
-        text("SELECT id FROM artists WHERE user_id = :uid::uuid LIMIT 1"),
+        text("SELECT id FROM artists WHERE user_id = CAST(:uid AS UUID) LIMIT 1"),
         {"uid": current_user.user_id},
     )
     artist = artist_result.mappings().first()
@@ -325,7 +325,7 @@ async def create_product(
                file_url, preview_url, cover_art_url, file_size_mb, file_format,
                license_type, download_limit, tags, release_id, track_id)
             VALUES
-              (:id::uuid, :artist_id::uuid, :title, :description, :product_type, :price, :currency,
+              (CAST(:id AS UUID), CAST(:artist_id AS UUID), :title, :description, :product_type, :price, :currency,
                :file_url, :preview_url, :cover_art_url, :file_size_mb, :file_format,
                :license_type, :download_limit, :tags, :release_id, :track_id)
         """),
@@ -365,7 +365,7 @@ async def update_product(
         text("""
             SELECT dp.id, dp.artist_id FROM digital_products dp
             JOIN artists a ON a.id = dp.artist_id
-            WHERE dp.id = :pid::uuid AND a.user_id = :uid::uuid
+            WHERE dp.id = CAST(:pid AS UUID) AND a.user_id = CAST(:uid AS UUID)
         """),
         {"pid": product_id, "uid": current_user.user_id},
     )
@@ -379,7 +379,7 @@ async def update_product(
     set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
     updates["pid"] = product_id
     await db.execute(
-        text(f"UPDATE digital_products SET {set_clauses} WHERE id = :pid::uuid"),
+        text(f"UPDATE digital_products SET {set_clauses} WHERE id = CAST(:pid AS UUID)"),
         updates,
     )
     await db.commit()
@@ -397,7 +397,7 @@ async def deactivate_product(
         text("""
             SELECT dp.id FROM digital_products dp
             JOIN artists a ON a.id = dp.artist_id
-            WHERE dp.id = :pid::uuid AND a.user_id = :uid::uuid
+            WHERE dp.id = CAST(:pid AS UUID) AND a.user_id = CAST(:uid AS UUID)
         """),
         {"pid": product_id, "uid": current_user.user_id},
     )
@@ -405,7 +405,7 @@ async def deactivate_product(
         raise HTTPException(status_code=404, detail="Product not found or not authorized")
 
     await db.execute(
-        text("UPDATE digital_products SET is_active = false WHERE id = :pid::uuid"),
+        text("UPDATE digital_products SET is_active = false WHERE id = CAST(:pid AS UUID)"),
         {"pid": product_id},
     )
     await db.commit()
@@ -421,7 +421,7 @@ async def purchase_product(
 ):
     """Purchase a digital product (authenticated user)."""
     result = await db.execute(
-        text("SELECT * FROM digital_products WHERE id = :id::uuid AND is_active = true"),
+        text("SELECT * FROM digital_products WHERE id = CAST(:id AS UUID) AND is_active = true"),
         {"id": product_id},
     )
     product = result.mappings().first()
@@ -456,9 +456,9 @@ async def purchase_product(
                melodio_fee, artist_payout, stripe_payment_intent_id,
                download_token, max_downloads, license_key, status, expires_at)
             VALUES
-              (:id::uuid, :product_id::uuid, :buyer_user_id::uuid, :artist_id::uuid,
+              (CAST(:id AS UUID), CAST(:product_id AS UUID), CAST(:buyer_user_id AS UUID), CAST(:artist_id AS UUID),
                :amount_paid, :currency, :melodio_fee, :artist_payout,
-               :stripe_payment_intent_id, :download_token::uuid, :max_downloads,
+               :stripe_payment_intent_id, CAST(:download_token AS UUID), :max_downloads,
                :license_key, 'completed', :expires_at)
         """),
         {
@@ -483,7 +483,7 @@ async def purchase_product(
         text("""
             UPDATE digital_products
             SET units_sold = units_sold + 1, total_revenue = total_revenue + :amount
-            WHERE id = :pid::uuid
+            WHERE id = CAST(:pid AS UUID)
         """),
         {"amount": amount_paid, "pid": product_id},
     )

@@ -189,6 +189,24 @@ async def update_task_status(
 # Messages
 # ----------------------------------------------------------------
 
+@router.get("/messages")
+async def list_recent_messages(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Get recent agent message bus activity."""
+    result = await db.execute(
+        text(
+            "SELECT id, from_agent, to_agent, topic, priority, created_at "
+            "FROM agent_messages ORDER BY created_at DESC LIMIT :limit"
+        ),
+        {"limit": limit},
+    )
+    rows = result.mappings().fetchall()
+    return {"messages": [{k: str(v) if hasattr(v, 'isoformat') or hasattr(v, 'hex') else v for k, v in dict(r).items()} for r in rows]}
+
+
 @router.post("/messages", status_code=status.HTTP_201_CREATED)
 async def publish_message(
     msg: MessagePublish,

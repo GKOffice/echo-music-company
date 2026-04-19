@@ -140,11 +140,13 @@ async def run_all_checks() -> dict:
 
 @router.get("/status")
 async def connection_status():
-    """Return last saved connection report (fast, no live checks)."""
+    """Return last saved connection report. Auto-runs check if no report exists."""
     if REPORT_PATH.exists():
         with open(REPORT_PATH) as f:
             return JSONResponse(json.load(f))
-    return JSONResponse({"error": "No report yet — run /check first"}, status_code=404)
+    # No cached report — run checks now and return
+    report = await run_all_checks()
+    return JSONResponse(report)
 
 
 @router.post("/check")

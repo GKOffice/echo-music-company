@@ -98,7 +98,7 @@ async def create_campaign(
         INSERT INTO studio_fund_campaigns
           (id, artist_id, title, goal_amount, description, reward_tiers, release_date, status, total_pledged)
         VALUES
-          (:id, :artist_id, :title, :goal_amount, :description, :reward_tiers::jsonb, :release_date, 'active', 0)
+          (:id, :artist_id, :title, :goal_amount, :description, CAST(:reward_tiers AS JSONB), :release_date, 'active', 0)
     """), {
         "id": campaign_id,
         "artist_id": current_user.user_id,
@@ -515,7 +515,7 @@ async def trigger_settlement(
           (id, song_id, artist_id, campaign_id, total_collected, collaborator_payouts,
            platform_fee, artist_balance, status, settled_at)
         VALUES
-          (:id, :song_id, :artist_id, :campaign_id, :total, :payouts::jsonb,
+          (:id, :song_id, :artist_id, :campaign_id, :total, CAST(:payouts AS JSONB),
            :fee, :balance, 'complete', NOW())
     """), {
         "id": settlement_id,

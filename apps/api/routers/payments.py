@@ -90,7 +90,7 @@ async def _credit_points(user_id: str, amount_cents: int, pi_id: str, db: AsyncS
     await db.execute(
         text("""
             INSERT INTO echo_points (id, user_id, points, transaction_type, description, reference_id)
-            VALUES (:id::uuid, :user_id::uuid, :points, 'purchase', :description, :ref_id)
+            VALUES (CAST(:id AS UUID), CAST(:user_id AS UUID), :points, 'purchase', :description, :ref_id)
         """),
         {
             "id": str(uuid.uuid4()),
@@ -120,7 +120,7 @@ async def _create_digital_purchase(
         }
 
     result = await db.execute(
-        text("SELECT * FROM digital_products WHERE id = :id::uuid AND is_active = true"),
+        text("SELECT * FROM digital_products WHERE id = CAST(:id AS UUID) AND is_active = true"),
         {"id": product_id},
     )
     product = result.mappings().first()
@@ -143,9 +143,9 @@ async def _create_digital_purchase(
                melodio_fee, artist_payout, stripe_payment_intent_id,
                download_token, max_downloads, license_key, status, expires_at)
             VALUES
-              (:id::uuid, :product_id::uuid, :buyer_user_id::uuid, :artist_id::uuid,
+              (CAST(:id AS UUID), CAST(:product_id AS UUID), CAST(:buyer_user_id AS UUID), CAST(:artist_id AS UUID),
                :amount_paid, :currency, :melodio_fee, :artist_payout,
-               :stripe_payment_intent_id, :download_token::uuid, :max_downloads,
+               :stripe_payment_intent_id, CAST(:download_token AS UUID), :max_downloads,
                :license_key, 'completed', :expires_at)
         """),
         {
@@ -168,7 +168,7 @@ async def _create_digital_purchase(
         text("""
             UPDATE digital_products
             SET units_sold = units_sold + 1, total_revenue = total_revenue + :amount
-            WHERE id = :pid::uuid
+            WHERE id = CAST(:pid AS UUID)
         """),
         {"amount": amount_paid, "pid": product_id},
     )
@@ -350,7 +350,7 @@ async def refund_payment(
 ):
     """Refund a payment (admin only)."""
     user_result = await db.execute(
-        text("SELECT role FROM users WHERE id = :uid::uuid"),
+        text("SELECT role FROM users WHERE id = CAST(:uid AS UUID)"),
         {"uid": current_user.user_id},
     )
     user = user_result.mappings().first()
@@ -392,7 +392,7 @@ async def connect_onboard(
 ):
     """Create a Stripe Connect Express account for the current artist and return an onboarding link."""
     artist_result = await db.execute(
-        text("SELECT id, name, stripe_connect_id FROM artists WHERE user_id = :uid::uuid LIMIT 1"),
+        text("SELECT id, name, stripe_connect_id FROM artists WHERE user_id = CAST(:uid AS UUID) LIMIT 1"),
         {"uid": current_user.user_id},
     )
     artist = artist_result.mappings().first()
@@ -404,7 +404,7 @@ async def connect_onboard(
     if not account_id:
         # Fetch user email for the Connect account
         user_result = await db.execute(
-            text("SELECT email FROM users WHERE id = :uid::uuid"),
+            text("SELECT email FROM users WHERE id = CAST(:uid AS UUID)"),
             {"uid": current_user.user_id},
         )
         user = user_result.mappings().first()
@@ -412,7 +412,7 @@ async def connect_onboard(
         account_id = account["account_id"]
 
         await db.execute(
-            text("UPDATE artists SET stripe_connect_id = :acct, stripe_connect_status = 'pending' WHERE id = :aid::uuid"),
+            text("UPDATE artists SET stripe_connect_id = :acct, stripe_connect_status = 'pending' WHERE id = CAST(:aid AS UUID)"),
             {"acct": account_id, "aid": str(artist["id"])},
         )
         await db.commit()
@@ -428,7 +428,7 @@ async def connect_status(
 ):
     """Check the current artist's Stripe Connect account status."""
     artist_result = await db.execute(
-        text("SELECT id, stripe_connect_id, stripe_connect_status FROM artists WHERE user_id = :uid::uuid LIMIT 1"),
+        text("SELECT id, stripe_connect_id, stripe_connect_status FROM artists WHERE user_id = CAST(:uid AS UUID) LIMIT 1"),
         {"uid": current_user.user_id},
     )
     artist = artist_result.mappings().first()
@@ -445,7 +445,7 @@ async def connect_status(
     new_status = "active" if status["payouts_enabled"] else "pending"
     if new_status != artist.get("stripe_connect_status"):
         await db.execute(
-            text("UPDATE artists SET stripe_connect_status = :status WHERE id = :aid::uuid"),
+            text("UPDATE artists SET stripe_connect_status = :status WHERE id = CAST(:aid AS UUID)"),
             {"status": new_status, "aid": str(artist["id"])},
         )
         await db.commit()
@@ -467,7 +467,7 @@ async def connect_payout(
 ):
     """Trigger a payout to an artist's Connect account (admin only)."""
     user_result = await db.execute(
-        text("SELECT role FROM users WHERE id = :uid::uuid"),
+        text("SELECT role FROM users WHERE id = CAST(:uid AS UUID)"),
         {"uid": current_user.user_id},
     )
     user = user_result.mappings().first()
@@ -475,7 +475,7 @@ async def connect_payout(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     artist_result = await db.execute(
-        text("SELECT id, name, stripe_connect_id, stripe_connect_status FROM artists WHERE id = :aid::uuid"),
+        text("SELECT id, name, stripe_connect_id, stripe_connect_status FROM artists WHERE id = CAST(:aid AS UUID)"),
         {"aid": body.artist_id},
     )
     artist = artist_result.mappings().first()
@@ -494,7 +494,7 @@ async def connect_payout(
     await db.execute(
         text("""
             INSERT INTO audit_log (id, action, entity_type, entity_id, performed_by, details)
-            VALUES (:id::uuid, 'payout_created', 'artist', :artist_id::uuid, :admin_id::uuid, :details)
+            VALUES (CAST(:id AS UUID), 'payout_created', 'artist', CAST(:artist_id AS UUID), CAST(:admin_id AS UUID), :details)
         """),
         {
             "id": str(uuid.uuid4()),

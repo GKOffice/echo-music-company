@@ -64,9 +64,15 @@ class BaseAgent(ABC):
         self._running = False
         self._task_count = 0
         self._error_count = 0
+        self._consecutive_errors = 0  # Circuit breaker counter
         self._started_at: Optional[datetime] = None
         self._memory_store: Optional[AgentMemoryStore] = None
         self._confidence_gate = ConfidenceGate()
+
+    @property
+    def is_healthy(self) -> bool:
+        """Returns False if agent has hit 5+ consecutive errors (circuit breaker tripped)."""
+        return self._consecutive_errors < 5
 
     async def start(self):
         """Start the agent — connect to services and begin processing."""
@@ -140,10 +146,17 @@ class BaseAgent(ABC):
                         result = await self._run_with_guardrails(task, result)
                         await self._mark_task_complete(task.task_id, result)
                         self._task_count += 1
+                        self._consecutive_errors = 0  # Reset circuit breaker on success
                     except Exception as e:
                         self._error_count += 1
+                        self._consecutive_errors += 1
                         logger.error(f"[{self.agent_id}] Task {task.task_id} failed: {e}")
                         await self._mark_task_failed(task.task_id, str(e))
+                        if self._consecutive_errors >= 5:
+                            logger.critical(
+                                f"[{self.agent_id}] Circuit breaker TRIPPED — "
+                                f"{self._consecutive_errors} consecutive errors. Backing off 60s."
+                            )
                     finally:
                         if stream_id:
                             await bus.ack_task(
@@ -155,8 +168,15 @@ class BaseAgent(ABC):
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                self._consecutive_errors += 1
                 logger.error(f"[{self.agent_id}] Process loop error: {e}")
-                await asyncio.sleep(5)
+                if self._consecutive_errors >= 5:
+                    logger.critical(
+                        f"[{self.agent_id}] Circuit breaker TRIPPED — backing off 60s"
+                    )
+                    await asyncio.sleep(60)
+                else:
+                    await asyncio.sleep(5)
 
     async def _handle_bus_message(self, message: dict):
         """Handle a pub/sub message from the bus."""

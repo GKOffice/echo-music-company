@@ -29,7 +29,7 @@ FACILITATOR_FEE_STORE = Decimal("0.05")       # 5% on store purchases
 FACILITATOR_FEE_EXCHANGE = Decimal("0.025")   # 2.5% per side on exchange
 MARKETING_RULE_PCT = Decimal("0.80")          # 80% of artist point sales → marketing
 ARTIST_POCKET_PCT = Decimal("0.20")           # 20% → artist
-HOLDING_PERIOD_DAYS = 30                       # Before resale allowed
+HOLDING_PERIOD_DAYS = 365                      # 12-month lock before Exchange resale allowed
 MAX_POINTS_PER_TRACK = Decimal("25")          # Max sold to fans per track
 ARTIST_MIN_RETAINED = Decimal("30")           # Artist always keeps 30 pts minimum
 MARKET_MAKER_SPREAD = Decimal("0.05")         # ±5% spread on Exchange
@@ -599,7 +599,7 @@ class VaultAgent(BaseAgent):
 
         import uuid as _uuid
         order_id = str(_uuid.uuid4())
-        expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=30)  # exchange order expiry (listing TTL, not hold period)
 
         await self.db_execute(
             """
@@ -1271,7 +1271,7 @@ class VaultAgent(BaseAgent):
                 """
                 UPDATE echo_points
                 SET buyer_user_id = $2::uuid,
-                    holding_period_ends = NOW() + INTERVAL '30 days',
+                    holding_period_ends = NOW() + INTERVAL '365 days',
                     status = 'active'
                 WHERE id = $1::uuid
                 """,

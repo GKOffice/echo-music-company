@@ -18,8 +18,10 @@ from routers.auth import get_current_user, TokenData
 router = APIRouter()
 
 PERSONA_API_KEY = os.getenv("PERSONA_API_KEY", "")
+PERSONA_TEMPLATE_ID = os.getenv("PERSONA_TEMPLATE_ID", "")
 PERSONA_BASE_URL = "https://withpersona.com/api/v1"
 PERSONA_VERSION = "2023-01-05"
+PERSONA_SANDBOX = PERSONA_API_KEY.startswith("persona_sandbox_")
 
 PERSONA_HEADERS = {
     "Authorization": f"Bearer {PERSONA_API_KEY}",
@@ -86,29 +88,42 @@ async def create_kyc_inquiry(
 
     reference_id = body.reference_id or str(current_user.user_id)
 
+    # Build payload — include template ID if configured
+    attributes: dict = {
+        "reference-id": reference_id,
+        "redirect-url": body.redirect_url,
+    }
+    if PERSONA_TEMPLATE_ID and not PERSONA_TEMPLATE_ID.startswith("itmpl_sandbox_default"):
+        attributes["inquiry-template-id"] = PERSONA_TEMPLATE_ID
+
     try:
-        resp = await _persona_post("/inquiries", {
-            "data": {
-                "attributes": {
-                    "inquiry-template-version-id": None,  # uses default template
-                    "reference-id": reference_id,
-                    "redirect-url": body.redirect_url,
-                }
-            }
-        })
+        resp = await _persona_post("/inquiries", {"data": {"attributes": attributes}})
     except httpx.HTTPStatusError as e:
-        # Try without template version (uses account default)
-        try:
-            resp = await _persona_post("/inquiries", {
-                "data": {
-                    "attributes": {
-                        "reference-id": reference_id,
-                        "redirect-url": body.redirect_url,
-                    }
-                }
-            })
-        except Exception as e2:
-            raise HTTPException(status_code=502, detail=f"Persona error: {str(e2)}")
+        status_code = e.response.status_code if hasattr(e, 'response') else 0
+        # Sandbox without a real template — return a mock inquiry so the flow is testable
+        if PERSONA_SANDBOX and status_code in (404, 400):
+            mock_id = f"inq_sandbox_{reference_id[:8]}"
+            return {
+                "inquiry_id": mock_id,
+                "hosted_url": f"https://withpersona.com/verify?inquiry-id={mock_id}",
+                "status": "created",
+                "reference_id": reference_id,
+                "sandbox_mode": True,
+                "note": "Sandbox mock — set PERSONA_TEMPLATE_ID in .env for live verification",
+            }
+        raise HTTPException(status_code=502, detail=f"Persona error: {str(e)}")
+    except Exception as e:
+        if PERSONA_SANDBOX:
+            mock_id = f"inq_sandbox_{reference_id[:8]}"
+            return {
+                "inquiry_id": mock_id,
+                "hosted_url": f"https://withpersona.com/verify?inquiry-id={mock_id}",
+                "status": "created",
+                "reference_id": reference_id,
+                "sandbox_mode": True,
+                "note": "Sandbox mock — set PERSONA_TEMPLATE_ID in .env for live verification",
+            }
+        raise HTTPException(status_code=502, detail=f"Persona error: {str(e)}")
 
     inquiry = resp.get("data", {})
     inquiry_id = inquiry.get("id")
@@ -141,13 +156,21 @@ async def get_kyc_status(
     status = attrs.get("status")
     approved = status == "completed"
 
+    country_code = attrs.get("country-code", "")
+    # Tax form requirements (W-9 for US, W-8BEN for international)
+    # TODO: set tax_form_required=True dynamically when user earns > $600/yr
+    # TODO: collect W-9 / W-8BEN via Persona or DocuSign before first payout
+    is_us = country_code in ("US", "USA", "")
     return {
         "inquiry_id": inquiry_id,
         "status": status,
         "approved": approved,
         "name": attrs.get("name-first", "") + " " + attrs.get("name-last", ""),
-        "country": attrs.get("country-code"),
+        "country": country_code,
         "completed_at": attrs.get("completed-at"),
+        "tax_form_required": False,   # TODO: True when annual earnings > $600
+        "tax_form_collected": False,  # TODO: collect W-9 (US) or W-8BEN (intl) before first payout
+        "tax_form_type": "W-9" if is_us else "W-8BEN",
     }
 
 
@@ -185,7 +208,7 @@ async def persona_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             UPDATE users SET
                 email_verified = TRUE,
                 updated_at = NOW()
-            WHERE id = :user_id::uuid
+            WHERE id = CAST(:user_id AS UUID)
         """), {"user_id": reference_id})
         await db.commit()
 
