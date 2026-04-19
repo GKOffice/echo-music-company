@@ -150,12 +150,12 @@ async def browse_listings(
     )
     rows = result.mappings().all()
 
-    # Increment views for returned listings
+    # Increment views for returned listings (BUG FIX: use parameterized ANY() — no string interpolation)
     if rows:
         ids = [str(r["id"]) for r in rows]
-        placeholders = ", ".join(f"'{i}'" for i in ids)
         await db.execute(
-            text(f"UPDATE deal_listings SET views = views + 1 WHERE id::text IN ({placeholders})")
+            text("UPDATE deal_listings SET views = views + 1 WHERE id = ANY(CAST(:ids AS UUID[]))"),
+            {"ids": ids},
         )
 
     count_result = await db.execute(

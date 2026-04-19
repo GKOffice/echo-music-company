@@ -26,6 +26,8 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     stage_name: Optional[str] = None
 
+_PROFILE_UPDATE_ALLOWED = {"bio", "genre", "photo_url", "social_links", "name", "stage_name"}
+
 
 class DemoUpload(BaseModel):
     title: str
@@ -105,6 +107,8 @@ async def update_profile(
         updates["stage_name"] = body.stage_name
 
     if updates:
+        # BUG FIX: whitelist column names before building dynamic SET clause
+        updates = {k: v for k, v in updates.items() if k in _PROFILE_UPDATE_ALLOWED}
         set_clause = ", ".join(f"{k} = :{k}" for k in updates)
         updates["id"] = str(artist["id"])
         await db.execute(
@@ -224,6 +228,9 @@ async def connect_socials(
         updates["youtube_url"] = body.youtube_url
 
     if updates:
+        # BUG FIX: whitelist socials columns
+        _SOCIALS_ALLOWED = {"spotify_url", "instagram_url", "youtube_url"}
+        updates = {k: v for k, v in updates.items() if k in _SOCIALS_ALLOWED}
         set_clause = ", ".join(f"{k} = :{k}" for k in updates)
         updates["id"] = str(artist["id"])
         await db.execute(

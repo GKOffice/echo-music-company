@@ -94,6 +94,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def _hash_token(token: str) -> str:
+    """SHA-256 hash of raw JWT for session table storage."""
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
@@ -111,6 +117,28 @@ async def get_current_user(
         token_data = TokenData(user_id=user_id, role=payload.get("role"))
     except JWTError:
         raise credentials_exception
+
+    # BUG FIX: Check session is not revoked in DB
+    from sqlalchemy import text as _text
+    token_hash = _hash_token(token)
+    try:
+        sess = await db.execute(
+            _text(
+                "SELECT id FROM sessions WHERE token_hash = :h "
+                "AND revoked_at IS NULL AND expires_at > NOW() LIMIT 1"
+            ),
+            {"h": token_hash},
+        )
+        if not sess.fetchone():
+            raise credentials_exception
+    except HTTPException:
+        raise
+    except Exception:
+        # If sessions table query fails (e.g. table not yet migrated), allow through
+        # but log the issue
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Session table check failed — allowing token through")
+
     return token_data
 
 
@@ -157,6 +185,27 @@ async def register(request: Request, user_in: UserCreate, db: AsyncSession = Dep
     access_token = create_access_token(
         data={"sub": user_id, "role": user_in.role}
     )
+    # Write session record for revocation support
+    token_hash = _hash_token(access_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO sessions (id, user_id, token_hash, ip_address, expires_at)
+                VALUES (:id, CAST(:user_id AS UUID), :token_hash, :ip, :expires_at)
+            """),
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "token_hash": token_hash,
+                "ip": request.client.host if request.client else None,
+                "expires_at": expires_at,
+            },
+        )
+        await db.commit()
+    except Exception:
+        pass  # Non-fatal
+
     return Token(
         access_token=access_token,
         token_type="bearer",
@@ -207,6 +256,30 @@ async def login(
     access_token = create_access_token(
         data={"sub": str(user.id), "role": user.role}
     )
+
+    # BUG FIX: Write session to DB so it can be revoked on logout
+    token_hash = _hash_token(access_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO sessions (id, user_id, token_hash, ip_address, expires_at)
+                VALUES (:id, CAST(:user_id AS UUID), :token_hash, :ip, :expires_at)
+            """),
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": str(user.id),
+                "token_hash": token_hash,
+                "ip": request.client.host if request.client else None,
+                "expires_at": expires_at,
+            },
+        )
+        await db.commit()
+    except Exception as e:
+        # Non-fatal: session table write failure doesn't block login
+        import logging as _l
+        _l.getLogger(__name__).warning(f"Session write failed (non-fatal): {e}")
+
     return Token(
         access_token=access_token,
         token_type="bearer",
@@ -215,7 +288,23 @@ async def login(
 
 
 @router.post("/logout")
-async def logout(current_user: TokenData = Depends(get_current_user)):
+async def logout(
+    token: str = Depends(oauth2_scheme),
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # BUG FIX: Revoke session in DB so token cannot be reused
+    from sqlalchemy import text
+    token_hash = _hash_token(token)
+    try:
+        await db.execute(
+            text("UPDATE sessions SET revoked_at = NOW() WHERE token_hash = :h AND revoked_at IS NULL"),
+            {"h": token_hash},
+        )
+        await db.commit()
+    except Exception as e:
+        import logging as _l
+        _l.getLogger(__name__).warning(f"Session revoke failed: {e}")
     return {"message": "Logged out successfully"}
 
 

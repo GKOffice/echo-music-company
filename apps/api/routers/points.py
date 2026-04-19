@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from pydantic import BaseModel
@@ -244,13 +244,32 @@ async def buy_points(
     if req.points_qty > available:
         raise HTTPException(status_code=400, detail=f"Only {available} points remaining in this drop")
 
+    # ── Payment verification (BUG FIX: stripe_payment_id must exist and be succeeded) ──
+    if not req.stripe_payment_id:
+        raise HTTPException(status_code=402, detail="stripe_payment_id is required")
+    try:
+        import stripe as _stripe
+        import os as _os
+        _stripe.api_key = _os.getenv("STRIPE_SECRET_KEY")
+        pi = _stripe.PaymentIntent.retrieve(req.stripe_payment_id)
+        if pi.status != "succeeded":
+            raise HTTPException(status_code=402, detail=f"Payment not confirmed (status: {pi.status})")
+        pi_user = (pi.metadata or {}).get("user_id", "")
+        if pi_user and pi_user != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Payment does not belong to this user")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=402, detail=f"Could not verify payment: {e}")
+
     price_per_point = req.price_per_point or float(drop["price_per_point"])
     gross_amount = round(req.points_qty * price_per_point, 2)
     facilitator_fee = round(gross_amount * 0.05, 2)
     net_amount = round(gross_amount - facilitator_fee, 2)
     marketing_allocation = round(net_amount * 0.80, 2)
     artist_payment = round(net_amount * 0.20, 2)
-    holding_ends = datetime.now(timezone.utc) + timedelta(days=30)
+    # BUG FIX: 365-day hold to match marketing/legal language (was 30)
+    holding_ends = datetime.now(timezone.utc) + timedelta(days=365)
     point_id = str(uuid.uuid4())
 
     await db.execute(
@@ -578,6 +597,142 @@ async def get_payout_history(
 
 
 # ----------------------------------------------------------------
+# Payout Processing (called by quarterly scheduler)
+# ----------------------------------------------------------------
+
+@router.post("/payouts/process")
+async def process_quarterly_payouts(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Process quarterly royalty payouts for all eligible point holders.
+    Called by APScheduler on Jan/Apr/Jul/Oct 15 at 09:00 UTC.
+    Also callable manually by admin.
+    Requires X-Service: scheduler header OR admin auth token.
+    """
+    import logging as _logging
+    from datetime import datetime, timezone
+    _log = _logging.getLogger(__name__)
+
+    # Auth: accept scheduler service header OR admin JWT
+    service_header = request.headers.get("X-Service", "")
+    auth_header = request.headers.get("Authorization", "")
+    is_admin = False
+
+    if service_header == "scheduler":
+        # Trusted internal call from APScheduler
+        is_admin = True
+    elif auth_header.startswith("Bearer "):
+        try:
+            from routers.auth import get_current_user, TokenData
+            from jose import jwt
+            import os as _os
+            token = auth_header.split(" ", 1)[1]
+            payload = jwt.decode(token, _os.getenv("SECRET_KEY", ""), algorithms=["HS256"])
+            if payload.get("role") in ("admin", "owner", "super_admin"):
+                is_admin = True
+        except Exception:
+            pass
+
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to trigger payouts")
+
+    now = datetime.now(timezone.utc)
+    quarter = f"Q{(now.month - 1) // 3 + 1}-{now.year}"
+    MIN_PAYOUT = 50.0
+
+    _log.info(f"[payouts] Processing quarterly payouts for {quarter}")
+
+    # Find all active point holdings with undistributed royalties
+    holdings_result = await db.execute(
+        text("""
+            SELECT
+                ep.id as echo_point_id,
+                ep.buyer_user_id,
+                ep.track_id,
+                ep.points_purchased,
+                COALESCE(
+                    (SELECT SUM(net_amount) FROM royalties
+                     WHERE track_id = ep.track_id AND distributed = FALSE),
+                    0
+                ) as revenue_pool
+            FROM echo_points ep
+            WHERE ep.status IN ('active', 'tradeable')
+              AND ep.holding_period_ends IS NOT NULL
+            ORDER BY ep.buyer_user_id, ep.track_id
+        """)
+    )
+    holdings = holdings_result.mappings().all()
+
+    payouts_created = 0
+    payouts_skipped = 0
+    total_distributed = 0.0
+
+    for h in holdings:
+        revenue_pool = float(h["revenue_pool"] or 0)
+        points_held = float(h["points_purchased"] or 0)
+        # Each point = 1% of revenue
+        payout_amount = round(revenue_pool * points_held / 100, 2)
+
+        if payout_amount < MIN_PAYOUT:
+            payouts_skipped += 1
+            continue
+
+        payout_id = str(uuid.uuid4())
+        try:
+            await db.execute(
+                text("""
+                    INSERT INTO point_payouts (
+                        id, user_id, track_id, echo_point_id,
+                        quarter, points_held, revenue_pool,
+                        payout_amount, status, processed_at
+                    ) VALUES (
+                        :id, :user_id, :track_id, :echo_point_id,
+                        :quarter, :points_held, :revenue_pool,
+                        :payout_amount, 'processed', NOW()
+                    )
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "id": payout_id,
+                    "user_id": str(h["buyer_user_id"]),
+                    "track_id": str(h["track_id"]),
+                    "echo_point_id": str(h["echo_point_id"]),
+                    "quarter": quarter,
+                    "points_held": points_held,
+                    "revenue_pool": revenue_pool,
+                    "payout_amount": payout_amount,
+                },
+            )
+            # Update royalties_earned on the echo_point
+            await db.execute(
+                text("UPDATE echo_points SET royalties_earned = royalties_earned + :amt WHERE id = :id"),
+                {"amt": payout_amount, "id": str(h["echo_point_id"])},
+            )
+            payouts_created += 1
+            total_distributed += payout_amount
+        except Exception as exc:
+            _log.error(f"[payouts] Failed to create payout for {h['echo_point_id']}: {exc}")
+
+    # Mark royalties as distributed
+    await db.execute(
+        text("UPDATE royalties SET distributed = TRUE WHERE distributed = FALSE")
+    )
+    await db.commit()
+
+    _log.info(f"[payouts] {quarter} complete: {payouts_created} payouts, ${total_distributed:.2f} distributed")
+    return {
+        "quarter": quarter,
+        "payouts_created": payouts_created,
+        "payouts_skipped_below_threshold": payouts_skipped,
+        "total_distributed": round(total_distributed, 2),
+        "min_payout_threshold": MIN_PAYOUT,
+        "processed_at": now.isoformat(),
+    }
+
+
+# ----------------------------------------------------------------
 # Drops — static routes BEFORE any parameterized routes
 # ----------------------------------------------------------------
 
@@ -637,8 +792,21 @@ async def create_drop(
     db: AsyncSession = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Create a new point drop for a track."""
+    """Create a new point drop for a track. Requires admin/owner OR the artist's own account."""
     from datetime import datetime, timedelta, timezone
+
+    # BUG FIX: Any authenticated user could previously create drops for any artist
+    if current_user.role not in ("admin", "owner", "super_admin"):
+        # Non-admin: verify the artist belongs to this user
+        ownership_result = await db.execute(
+            text("SELECT id FROM artists WHERE id = :artist_id AND user_id = CAST(:user_id AS UUID) LIMIT 1"),
+            {"artist_id": req.artist_id, "user_id": current_user.user_id},
+        )
+        if not ownership_result.mappings().first():
+            raise HTTPException(
+                status_code=403,
+                detail="You are not authorized to create drops for this artist",
+            )
 
     if req.points_to_sell <= 0 or req.price_per_point <= 0:
         raise HTTPException(status_code=400, detail="points_to_sell and price_per_point must be positive")

@@ -245,6 +245,9 @@ async def create_royalty(
     db: AsyncSession = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    # BUG FIX: only admin/owner/agents can write royalty records
+    if current_user.role not in ("admin", "super_admin", "owner"):
+        raise HTTPException(status_code=403, detail="Admin access required to create royalty records")
     royalty_id = str(uuid.uuid4())
     await db.execute(
         text("""
@@ -392,6 +395,9 @@ async def create_expense(
     db: AsyncSession = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    # BUG FIX: only admin/owner can log expenses (prevents artists inflating costs)
+    if current_user.role not in ("admin", "super_admin", "owner"):
+        raise HTTPException(status_code=403, detail="Admin access required to log expenses")
     expense_id = str(uuid.uuid4())
     await db.execute(
         text("""

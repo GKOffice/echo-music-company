@@ -81,6 +81,13 @@ class DigitalProductUpdate(BaseModel):
     release_id: Optional[str] = None
     track_id: Optional[str] = None
 
+_DIGITAL_PRODUCT_UPDATE_ALLOWED = {
+    "title", "description", "product_type", "price", "currency",
+    "file_url", "preview_url", "cover_art_url", "file_size_mb",
+    "file_format", "license_type", "download_limit", "is_active",
+    "is_featured", "tags", "release_id", "track_id",
+}
+
 
 class PurchaseRequest(BaseModel):
     stripe_payment_intent_id: Optional[str] = None
@@ -373,6 +380,8 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Product not found or not authorized")
 
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    # BUG FIX: whitelist column names before building dynamic SET clause
+    updates = {k: v for k, v in updates.items() if k in _DIGITAL_PRODUCT_UPDATE_ALLOWED}
     if not updates:
         return {"status": "no_changes"}
 

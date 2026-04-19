@@ -39,6 +39,11 @@ class BeatUpdate(BaseModel):
     uniqueness_score: Optional[float] = None
     sync_readiness: Optional[float] = None
 
+_BEAT_UPDATE_ALLOWED = {
+    "title", "status", "available_as", "collaboration_open",
+    "price_min", "price_max", "quality_score", "uniqueness_score", "sync_readiness",
+}
+
 
 @router.get("/beats")
 async def list_beats(
@@ -167,6 +172,8 @@ async def update_beat(
     current_user: TokenData = Depends(get_current_user),
 ):
     update_data = {k: v for k, v in updates.model_dump().items() if v is not None}
+    # BUG FIX: whitelist column names
+    update_data = {k: v for k, v in update_data.items() if k in _BEAT_UPDATE_ALLOWED}
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 

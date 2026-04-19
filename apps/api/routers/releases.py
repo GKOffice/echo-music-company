@@ -34,6 +34,13 @@ class ReleaseUpdate(BaseModel):
     apple_url: Optional[str] = None
     youtube_url: Optional[str] = None
 
+# Explicit allowlist: only these columns may be written via PATCH
+_RELEASE_UPDATE_ALLOWED = {
+    "title", "status", "priority", "genre", "isrc", "upc",
+    "release_date", "master_audio_url", "artwork_url",
+    "spotify_url", "apple_url", "youtube_url",
+}
+
 
 class TrackCreate(BaseModel):
     release_id: str
@@ -155,6 +162,8 @@ async def update_release(
     current_user: TokenData = Depends(get_current_user),
 ):
     update_data = {k: v for k, v in updates.model_dump().items() if v is not None}
+    # BUG FIX: whitelist column names before building dynamic SET clause
+    update_data = {k: v for k, v in update_data.items() if k in _RELEASE_UPDATE_ALLOWED}
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
