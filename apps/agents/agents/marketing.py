@@ -90,24 +90,75 @@ class MarketingAgent(BaseAgent):
     # Task handlers
     # ----------------------------------------------------------------
 
+    async def _load_artist_config(self, artist_id: str) -> dict:
+        """Load artist-specific marketing config set via WhatsApp. Returns {} if none set."""
+        try:
+            row = await self.db_fetchrow(
+                "SELECT * FROM artist_agent_config WHERE artist_id = $1::uuid AND agent_id = 'marketing' AND is_active = TRUE",
+                artist_id,
+            )
+            return dict(row) if row else {}
+        except Exception:
+            return {}  # Table may not exist yet — graceful fallback
+
     async def _create_campaign(self, task: AgentTask) -> dict:
         release_id = task.payload.get("release_id") or task.release_id
         release = await self.db_fetchrow(
-            "SELECT r.title, r.release_date, r.priority, a.name, a.genre FROM releases r "
+            "SELECT r.title, r.release_date, r.priority, r.artist_id, a.name, a.genre FROM releases r "
             "LEFT JOIN artists a ON r.artist_id = a.id WHERE r.id = $1::uuid",
             release_id,
         )
         if not release:
             return {"error": "Release not found", "release_id": release_id}
 
+        # Load artist-specific config (set by artist via WhatsApp)
+        artist_id = str(release.get("artist_id", ""))
+        artist_config = await self._load_artist_config(artist_id)
+        config_applied = bool(artist_config)
+
         priority = release.get("priority", "standard")
         total_budget = {"priority": 5000.0, "standard": 2000.0, "low": 500.0}.get(priority, 2000.0)
+
+        # Apply artist budget style if configured
+        budget_style = artist_config.get("budget_style", "balanced")
+        if budget_style == "aggressive":
+            total_budget = round(total_budget * 1.25, 2)  # 25% boost — concentrate spend
+        elif budget_style == "conservative":
+            total_budget = round(total_budget * 0.70, 2)  # 30% reduction — slow burn
 
         release_date = release.get("release_date") or date.today()
         if isinstance(release_date, str):
             release_date = date.fromisoformat(release_date)
 
-        channel_budgets = {ch: round(total_budget * pct, 2) for ch, pct in CHANNEL_ALLOCATION.items()}
+        # Build channel allocation — respect artist preferences
+        base_allocation = dict(CHANNEL_ALLOCATION)
+        preferred = []
+        excluded = []
+        try:
+            import json as _j
+            raw_preferred = artist_config.get("preferred_channels", "[]")
+            raw_excluded = artist_config.get("excluded_channels", "[]")
+            preferred = _j.loads(raw_preferred) if isinstance(raw_preferred, str) else (raw_preferred or [])
+            excluded = _j.loads(raw_excluded) if isinstance(raw_excluded, str) else (raw_excluded or [])
+        except Exception:
+            pass
+
+        if excluded:
+            # Remove excluded channels and redistribute their budget proportionally
+            active = {k: v for k, v in base_allocation.items() if k not in excluded}
+            total_pct = sum(active.values())
+            base_allocation = {k: round(v / total_pct, 4) for k, v in active.items()}
+
+        if preferred:
+            # Boost preferred channels by 20% each, reduce others proportionally
+            boost = 0.20
+            for ch in preferred:
+                if ch in base_allocation:
+                    base_allocation[ch] = round(base_allocation[ch] * (1 + boost), 4)
+            total_pct = sum(base_allocation.values())
+            base_allocation = {k: round(v / total_pct, 4) for k, v in base_allocation.items()}
+
+        channel_budgets = {ch: round(total_budget * pct, 2) for ch, pct in base_allocation.items()}
 
         plan = {
             "week_minus_4": {
@@ -155,8 +206,17 @@ class MarketingAgent(BaseAgent):
         await self.send_message("social", "create_content_calendar", {"release_id": release_id})
         await self.send_message("pr", "write_press_release", {"release_id": release_id})
 
-        logger.info(f"[Marketing] Campaign created for '{release['title']}' — ${total_budget} across {len(CHANNEL_ALLOCATION)} channels")
-        await self.log_audit("create_campaign", "releases", release_id, {"budget": total_budget, "campaign_id": campaign_id})
+        logger.info(
+            f"[Marketing] Campaign created for '{release['title']}' — "
+            f"${total_budget} | style={budget_style} | config_applied={config_applied} | "
+            f"channels={list(channel_budgets.keys())}"
+        )
+        await self.log_audit("create_campaign", "releases", release_id, {
+            "budget": total_budget,
+            "campaign_id": campaign_id,
+            "config_applied": config_applied,
+            "budget_style": budget_style,
+        })
 
         return {
             "campaign_id": campaign_id,
@@ -167,6 +227,13 @@ class MarketingAgent(BaseAgent):
             "channel_budgets": channel_budgets,
             "timeline": plan,
             "status": "active",
+            "artist_config_applied": config_applied,
+            "budget_style": budget_style,
+            "preferred_channels": preferred,
+            "excluded_channels": excluded,
+            "target_audience": artist_config.get("target_audience"),
+            "campaign_goals": artist_config.get("campaign_goals"),
+            "avoid_content": artist_config.get("avoid_content"),
         }
 
     async def _optimize_campaign(self, task: AgentTask) -> dict:
